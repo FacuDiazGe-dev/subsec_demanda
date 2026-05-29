@@ -3,7 +3,7 @@ from datetime import date, datetime
 from services.supabase_client import get_supabase_client
 
 
-ESTADOS_CIERRE = {"Entregado", "Cancelado"}
+ESTADOS_CIERRE = {"Entregado", "Cancelado", "Cerrado"}
 
 
 def fecha_historial():
@@ -26,7 +26,7 @@ def agregar_historial(historial_actual, entrada):
 
 def crear_orden_material(data):
     supabase = get_supabase_client()
-    estado = data.get("estado") or "Pedido"
+    estado = data.get("estado") or "Pedido entrega"
     instrucciones = (data.get("instrucciones_tarea") or "").strip()
     historial = data.get("historial") or crear_historial_inicial(estado, instrucciones)
 
@@ -58,6 +58,17 @@ def listar_ordenes_pendientes():
     return [orden for orden in response.data or [] if orden.get("estado") not in ESTADOS_CIERRE]
 
 
+def listar_ordenes_todas():
+    supabase = get_supabase_client()
+    response = (
+        supabase.table("ordenes_materiales")
+        .select("*")
+        .order("n_orden", desc=True)
+        .execute()
+    )
+    return response.data or []
+
+
 def _demandas_por_id(ids_demanda):
     ids = [id_demanda for id_demanda in ids_demanda if id_demanda is not None]
     if not ids:
@@ -84,15 +95,17 @@ def _unir_ordenes_con_demandas(ordenes):
         fila["contacto"] = demanda.get("contacto")
         fila["prioridad_demanda"] = demanda.get("prioridad")
         fila["accion_demanda"] = demanda.get("accion")
-        fila["tipo_intervencion"] = demanda.get("tipo_intervencion")
         fila["estado_demanda"] = demanda.get("estado")
         fila["responsable_demanda"] = demanda.get("responsable")
         resultado.append(fila)
     return resultado
 
 
-def listar_ordenes_con_demanda():
-    ordenes = listar_ordenes_pendientes()
+def listar_ordenes_con_demanda(incluir_cerradas=False):
+    if incluir_cerradas:
+        ordenes = listar_ordenes_todas()
+    else:
+        ordenes = listar_ordenes_pendientes()
     return _unir_ordenes_con_demandas(ordenes)
 
 
@@ -110,7 +123,7 @@ def obtener_orden_por_id(n_orden):
     return _unir_ordenes_con_demandas(response.data)[0]
 
 
-def actualizar_orden_material(n_orden, estado, comentario):
+def actualizar_orden_material(n_orden, estado, comentario, fecha_entrega=None):
     orden = obtener_orden_por_id(n_orden)
     if not orden:
         return None
@@ -135,6 +148,8 @@ def actualizar_orden_material(n_orden, estado, comentario):
         "historial": agregar_historial(orden.get("historial"), entrada),
         "updated_at": datetime.now().isoformat(),
     }
+    if fecha_entrega is not None:
+        payload["fecha_entrega"] = fecha_entrega
 
     if cerrar:
         payload["fecha_cierre"] = date.today().isoformat()

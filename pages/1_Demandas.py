@@ -43,12 +43,30 @@ ACCIONES = [
     "Hacer nota",
     "Actuacion",
     "Obra",
+    "Materiales",
     "Entregar materiales",
     "Informe",
     "Seguimiento",
     "Emergencia",
     "Otro",
 ]
+
+TIPOS_MATERIALES = [
+    "Gestion de stock",
+    "Compra para emergencias",
+    "Reposicion de deposito",
+    "Insumos internos",
+    "Herramientas / equipamiento",
+    "Otro",
+]
+
+TIPOS_STOCK = {
+    "gestion de stock",
+    "compra para emergencias",
+    "reposicion de deposito",
+    "insumos internos",
+    "herramientas / equipamiento",
+}
 
 RESPONSABLES = ["Facundo", "Pedro", "Guillo", "Bea", "Iris", "Deposito"]
 
@@ -87,6 +105,16 @@ ESTADOS_POR_ACCION = {
         "Cerrado",
     ],
     "Entregar materiales": [
+        "Solicitud recibida",
+        "En gestion",
+        "Autorizacion recibida",
+        "Pendiente de entrega",
+        "Entrega programada",
+        "Materiales entregados",
+        "Firma pendiente",
+        "Cerrado",
+    ],
+    "Materiales": [
         "Solicitud recibida",
         "En gestion",
         "Autorizacion recibida",
@@ -194,6 +222,10 @@ def cargar_demanda_tab():
     with col_responsable:
         responsable = st.selectbox("Responsable", [""] + RESPONSABLES)
 
+    tipo_materiales = None
+    if accion in {"Materiales", "Entregar materiales"}:
+        tipo_materiales = st.selectbox("Tipo (Materiales)", TIPOS_MATERIALES)
+
     col_guardar, col_limpiar = st.columns([2, 1])
     with col_guardar:
         guardar = st.button("Guardar demanda", type="primary", use_container_width=True)
@@ -203,8 +235,13 @@ def cargar_demanda_tab():
     if guardar:
         expte_numero, expte_anio, expediente_texto = parsear_expediente(st.session_state["carga_expediente"])
         pedido = limpiar(st.session_state["carga_pedido"])
+        tipo_materiales_txt = limpiar(tipo_materiales)
+        es_stock = (
+            accion in {"Materiales", "Entregar materiales"}
+            and tipo_materiales_txt.lower() in TIPOS_STOCK
+        )
 
-        if not expediente_texto:
+        if not expediente_texto and not es_stock:
             st.error("Carga el expediente con formato numero/anio, por ejemplo 20373/24.")
             return
 
@@ -212,7 +249,18 @@ def cargar_demanda_tab():
             st.error("Completa el pedido antes de guardar.")
             return
 
-        expediente = buscar_expediente(expte_numero, expte_anio)
+        if es_stock:
+            expediente = None
+            expte_numero = None
+            expte_anio = None
+            expediente_texto = "DEP/STOCK"
+        else:
+            expediente = buscar_expediente(expte_numero, expte_anio)
+
+        observaciones = pedido
+        if accion in {"Materiales", "Entregar materiales"} and tipo_materiales_txt:
+            observaciones = f"Tipo materiales: {tipo_materiales_txt}. Pedido: {pedido}"
+
         datos = {
             "fecha_ingreso": date.today().isoformat(),
             "origen": origen,
@@ -227,10 +275,9 @@ def cargar_demanda_tab():
             "barrio": valor_personal(expediente, "barrio"),
             "contacto": valor_personal(expediente, "contacto"),
             "accion": accion,
-            "tipo_intervencion": accion,
             "estado": "Ingresada",
             "responsable": responsable or None,
-            "observaciones": pedido,
+            "observaciones": observaciones,
         }
         try:
             crear_demanda(datos)
