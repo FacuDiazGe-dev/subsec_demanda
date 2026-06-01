@@ -4,12 +4,21 @@ import re
 import pandas as pd
 import streamlit as st
 
+from utils.ui_styles import (
+    aplicar_estilos_globales,
+    page_header,
+    section_header,
+    prioridad_badge,
+    estado_badge,
+)
+
 from services.demandas_service import (
     actualizar_demanda,
     cerrar_demanda,
     crear_demanda,
     listar_demandas_pendientes,
 )
+from services.sociohabitacional_service import obtener_estados_por_accion
 from services.expedientes_service import buscar_expediente
 
 
@@ -43,7 +52,6 @@ ACCIONES = [
     "Hacer nota",
     "Actuacion",
     "Obra",
-    "Materiales",
     "Entregar materiales",
     "Informe",
     "Seguimiento",
@@ -72,17 +80,19 @@ RESPONSABLES = ["Facundo", "Pedro", "Guillo", "Bea", "Iris", "Deposito"]
 
 ESTADOS_POR_ACCION = {
     "Visitar": [
+        "Pendiente",
         "Para visita",
         "Visita programada",
-        "Relevado",
-        "Informes pendientes",
-        "Con informes completos",
-        "En gestion",
-        "Pase a obra",
+        "Visita Social",
+        "Visita Tecnica",
+        "Visitado",
+        "Informe Social",
+        "Informe Tecnico",
+        "Completo",
         "Cerrado",
     ],
-    "Hacer nota": ["Pendiente", "En elaboracion", "Presentada", "Cerrado"],
-    "Actuacion": ["Pendiente", "En elaboracion", "Presentada", "Cerrado"],
+    "Hacer nota": ["Pendiente", "Para Hacer", "En elaboración", "Presentado", "Cerrado"],
+    "Actuacion": ["Pendiente", "Para Hacer", "En elaboración", "Presentado", "Cerrado"],
     "Obra": [
         "Sin acta",
         "Acta compromiso / inicio firmada",
@@ -114,19 +124,9 @@ ESTADOS_POR_ACCION = {
         "Firma pendiente",
         "Cerrado",
     ],
-    "Materiales": [
-        "Solicitud recibida",
-        "En gestion",
-        "Autorizacion recibida",
-        "Pendiente de entrega",
-        "Entrega programada",
-        "Materiales entregados",
-        "Firma pendiente",
-        "Cerrado",
-    ],
-    "Informe": ["Solicitado", "En elaboracion", "Presentado", "Cerrado"],
-    "Seguimiento": ["Ingresada", "En revision", "Respondida", "Derivada", "Cerrado"],
-    "Otro": ["Ingresada", "En gestion", "Resuelta", "Cerrado"],
+    "Informe": ["Pendiente", "Para Hacer", "En elaboración", "Presentado", "Cerrado"],
+    "Seguimiento": ["Pendiente", "Para Hacer", "En elaboración", "Presentado", "Cerrado"],
+    "Otro": ["Pendiente", "Para Hacer", "En elaboración", "Presentado", "Cerrado"],
 }
 
 
@@ -137,6 +137,13 @@ def texto(valor):
 def limpiar(valor):
     return texto(valor).strip()
 
+def fecha_corta(v):
+    v = limpiar(v)
+    if not v:
+        return "-"
+    p = v[:10].split("-")
+    # Convierte YYYY-MM-DD a DD/MM/AA
+    return f"{p[2]}/{p[1]}/{p[0][2:]}" if len(p) == 3 else v
 
 def parsear_expediente(valor):
     valor = limpiar(valor)
@@ -203,7 +210,10 @@ def limpiar_carga():
 
 def cargar_demanda_tab():
     inicializar_carga()
-    st.subheader("Nueva demanda")
+    section_header(
+    "Nueva demanda",    
+        "Registrá una solicitud nueva a partir de expediente, pedido recibido y clasificación inicial.",
+    )
 
     st.text_input("Expediente", key="carga_expediente", placeholder="20373/24")
 
@@ -223,7 +233,7 @@ def cargar_demanda_tab():
         responsable = st.selectbox("Responsable", [""] + RESPONSABLES)
 
     tipo_materiales = None
-    if accion in {"Materiales", "Entregar materiales"}:
+    if accion == "Entregar materiales":
         tipo_materiales = st.selectbox("Tipo (Materiales)", TIPOS_MATERIALES)
 
     col_guardar, col_limpiar = st.columns([2, 1])
@@ -237,7 +247,7 @@ def cargar_demanda_tab():
         pedido = limpiar(st.session_state["carga_pedido"])
         tipo_materiales_txt = limpiar(tipo_materiales)
         es_stock = (
-            accion in {"Materiales", "Entregar materiales"}
+            accion == "Entregar materiales"
             and tipo_materiales_txt.lower() in TIPOS_STOCK
         )
 
@@ -258,7 +268,7 @@ def cargar_demanda_tab():
             expediente = buscar_expediente(expte_numero, expte_anio)
 
         observaciones = pedido
-        if accion in {"Materiales", "Entregar materiales"} and tipo_materiales_txt:
+        if accion == "Entregar materiales" and tipo_materiales_txt:
             observaciones = f"Tipo materiales: {tipo_materiales_txt}. Pedido: {pedido}"
 
         datos = {
@@ -298,10 +308,7 @@ def cargar_demanda_tab():
 
 def estados_para_demanda(demanda):
     accion = demanda.get("accion")
-    if accion in ESTADOS_POR_ACCION:
-        return accion, ESTADOS_POR_ACCION[accion]
-    return "Otro", ESTADOS_POR_ACCION["Otro"]
-
+    return accion, obtener_estados_por_accion(accion)
 
 def valor_para_historial(valor):
     valor = limpiar(valor)
@@ -340,11 +347,11 @@ def agregar_al_historial(historial_actual, nueva_accion, cambios):
     if not partes:
         return historial_actual or None
 
-    entrada = f"{date.today().strftime('%d/%m/%Y')}: {'; '.join(partes)}"
-    if historial_actual:
-        return f"{entrada} || {historial_actual}"
-    return entrada
-
+    hoy = date.today().strftime('%d/%m/%y')
+    texto_cambios = "; ".join(partes)
+    # Unificamos al formato usado en SocioHabitacional: || DD/MM/AA - cambios.
+    nueva_entrada = f"|| {hoy} - {texto_cambios}."
+    return f"{nueva_entrada} {historial_actual}".strip()
 
 def opciones_filtro(df, columna):
     if columna not in df.columns:
@@ -352,219 +359,267 @@ def opciones_filtro(df, columna):
     valores = [limpiar(valor) for valor in df[columna].dropna().tolist()]
     return sorted({valor for valor in valores if valor})
 
+def render_demandas_kpis(df):
+    """Muestra los indicadores superiores calculados del DataFrame actual."""
+    total = len(df)
+    
+    # En gestión: distinto de Pendiente, Ingresada, Cerrado
+    en_gestion = 0
+    if "estado" in df.columns:
+        estados_iniciales = {"Pendiente", "Ingresada", "Cerrado", "Cerrada"}
+        en_gestion = df[~df["estado"].fillna("").isin(estados_iniciales)].shape[0]
+        
+    # Urgentes/Prioritarias: empieza con 1 o 2
+    urgentes = 0
+    if "prioridad" in df.columns:
+        urgentes = df["prioridad"].fillna("").astype(str).str.contains(r"^[12]", regex=True).sum()
+        
+    # Sin responsable
+    sin_resp = 0
+    if "responsable" in df.columns:
+        sin_resp = df[df["responsable"].fillna("").str.strip() == ""].shape[0]
 
-def aplicar_filtros_demandas(df):
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Pendientes", total)
+    c2.metric("En gestión", en_gestion)
+    c3.metric("Urgentes/Prioritarias", urgentes)
+    c4.metric("Sin responsable", sin_resp)
+
+def render_filtros_demandas_compactos(df):
+    """Barra de filtros horizontal y compacta."""
     if df.empty:
-        return df
+        return df, False
 
-    with st.expander("Filtros", expanded=True):
-        busqueda = st.text_input(
-            "Buscar",
-            placeholder="Expediente, apellido, nombre, barrio, pedido...",
-        )
+    with st.container(border=True):
+        c1, c2, c3, c4, c5 = st.columns([2, 1.2, 1.2, 1.2, 0.6])
+        with c1:
+            q = st.text_input("Buscador", placeholder="Expediente, nombre, barrio...", label_visibility="collapsed")
+        with c2:
+            f_estado = st.multiselect("Estado", opciones_filtro(df, "estado"), placeholder="Estado", label_visibility="collapsed")
+        with c3:
+            f_prioridad = st.multiselect("Prioridad", opciones_filtro(df, "prioridad"), placeholder="Prioridad", label_visibility="collapsed")
+        with c4:
+            f_accion = st.multiselect("Acción", opciones_filtro(df, "accion"), placeholder="Acción", label_visibility="collapsed")
+        with c5:
+            limpiar_f = st.button("🔄", help="Limpiar filtros", use_container_width=True)
 
-        col_1, col_2, col_3 = st.columns(3)
-        with col_1:
-            filtro_prioridad = st.multiselect("Prioridad", opciones_filtro(df, "prioridad"))
-            filtro_estado = st.multiselect("Estado", opciones_filtro(df, "estado"))
-        with col_2:
-            filtro_responsable = st.multiselect("Responsable", opciones_filtro(df, "responsable"))
-            filtro_accion = st.multiselect("Accion", opciones_filtro(df, "accion"))
-        with col_3:
-            filtro_origen = st.multiselect("Origen", opciones_filtro(df, "origen"))
-            filtro_barrio = st.multiselect("Barrio", opciones_filtro(df, "barrio"))
+    if limpiar_f:
+        st.rerun()
 
     filtrado = df.copy()
-    filtros = {
-        "prioridad": filtro_prioridad,
-        "estado": filtro_estado,
-        "responsable": filtro_responsable,
-        "accion": filtro_accion,
-        "origen": filtro_origen,
-        "barrio": filtro_barrio,
-    }
-
+    filtros = {"estado": f_estado, "prioridad": f_prioridad, "accion": f_accion}
     for columna, valores in filtros.items():
         if valores and columna in filtrado.columns:
             filtrado = filtrado[filtrado[columna].fillna("").astype(str).isin(valores)]
 
-    busqueda = limpiar(busqueda).lower()
-    if busqueda:
-        columnas_busqueda = [
-            "id_demanda",
-            "expediente",
-            "apellido",
-            "nombre",
-            "dni",
-            "barrio",
-            "domicilio",
-            "contacto",
-            "observaciones",
-            "accion",
-            "estado",
-            "responsable",
-            "origen",
-            "prioridad",
-        ]
+    q = limpiar(q).lower()
+    if q:
+        columnas_busqueda = ["id_demanda", "expediente", "apellido", "nombre", "barrio", "domicilio", "observaciones", "accion"]
         columnas_busqueda = [col for col in columnas_busqueda if col in filtrado.columns]
-        mascara = (
-            filtrado[columnas_busqueda]
-            .fillna("")
-            .astype(str)
-            .agg(" ".join, axis=1)
-            .str.lower()
-            .str.contains(busqueda, regex=False)
-        )
+        mascara = filtrado[columnas_busqueda].fillna("").astype(str).agg(" ".join, axis=1).str.lower().str.contains(q, regex=False)
         filtrado = filtrado[mascara]
 
     return filtrado
 
-
 def pendientes_tab():
-    st.subheader("Demandas pendientes")
-
     demandas = listar_demandas_pendientes()
     if not demandas:
         st.info("No hay demandas pendientes.")
         return
-
     df = pd.DataFrame(demandas)
-    columnas = [
-        "id_demanda",
-        "fecha_ingreso",
-        "origen",
-        "prioridad",
-        "expediente",
-        "apellido",
-        "nombre",
-        "barrio",
-        "domicilio",
-        "contacto",
-        "observaciones",
-        "accion",
-        "estado",
-        "responsable",
-    ]
 
-    df_filtrado = aplicar_filtros_demandas(df)
+    # 1. KPIs Superiores
+    render_demandas_kpis(df)
+
+    # 2. Filtros Compactos
+    df_filtrado = render_filtros_demandas_compactos(df)
+
     if df_filtrado.empty:
         st.info("No hay demandas pendientes que coincidan con los filtros.")
         return
 
-    columnas_visibles = [col for col in columnas if col in df.columns]
-    df_visible = df_filtrado[columnas_visibles].rename(columns={"observaciones": "historial"})
-    seleccion_tabla = st.dataframe(
-        df_visible,
-        use_container_width=True,
-        hide_index=True,
-        on_select="rerun",
-        selection_mode="single-row",
-        key="tabla_demandas_pendientes",
-    )
+    # 3. Tabla de consulta con Scroll
+    columnas_tabla = ["expediente", "fecha_ingreso", "apellido", "nombre", "barrio", "accion", "estado", "prioridad"]
+    df_tabla = df_filtrado[columnas_tabla]
 
-    filas_seleccionadas = seleccion_tabla.selection.rows
-    if not filas_seleccionadas:
+    st.markdown("### Listado de demandas")
+    with st.container(height=350):
+        seleccion_tabla = st.dataframe(
+            df_tabla,
+            use_container_width=True,
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="tabla_demandas_operativa",
+        )
+
+    # 4. Detalle de demanda seleccionada
+    idx_sel = seleccion_tabla.selection.rows
+    if not idx_sel:
         st.info("Selecciona una demanda desde la tabla para editarla.")
         return
 
-    demanda = df_filtrado.iloc[filas_seleccionadas[0]].to_dict()
-    categoria, estados = estados_para_demanda(demanda)
+    demanda = df_filtrado.iloc[idx_sel[0]].to_dict()
+    did = demanda["id_demanda"]
 
-    with st.form("actualizar_demanda_form"):
-        st.caption(f"Editando demanda #{demanda.get('id_demanda')} - {texto(demanda.get('expediente'))}")
-        col_estado, col_prioridad, col_responsable = st.columns(3)
-        estado_actual = demanda.get("estado") if demanda.get("estado") in estados else estados[0]
-        prioridad_actual = demanda.get("prioridad") if demanda.get("prioridad") in PRIORIDADES else "3 - Normal"
-        responsable_actual = demanda.get("responsable") if demanda.get("responsable") in RESPONSABLES else ""
+    st.markdown(f"#### 🔎 Detalle de demanda #{did}")
 
-        with col_estado:
-            estado = st.selectbox("Estado", estados, index=estados.index(estado_actual))
-        with col_prioridad:
-            prioridad = st.selectbox("Prioridad", PRIORIDADES, index=PRIORIDADES.index(prioridad_actual))
-        with col_responsable:
-            responsable = st.selectbox(
-                "Responsable",
-                [""] + RESPONSABLES,
-                index=([""] + RESPONSABLES).index(responsable_actual),
+    # Control de modo edición
+    if "editar_demanda_id" not in st.session_state:
+        st.session_state["editar_demanda_id"] = None
+
+    modo_edicion = st.session_state["editar_demanda_id"] == did
+
+    col_main, col_actions = st.columns([0.72, 0.28])
+
+    with col_main:
+        # --- MODO CONSULTA: FICHA TÉCNICA (HTML) ---
+        historial_html = texto(demanda.get("observaciones")) or "Sin historial cargado."
+        
+        # Construcción de la card visual
+        ficha_html = f"""
+<div style="background-color: white; border: 1px solid #D9E6E4; border-radius: 18px; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+<div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
+<div style="font-size: 22px; font-weight: 800; color: #004F4C;">
+    {limpiar(demanda.get('apellido'))}, {limpiar(demanda.get('nombre'))}
+</div>
+<div style="display: flex; gap: 6px;">
+    {estado_badge(demanda.get('estado'))}
+    {prioridad_badge(demanda.get('prioridad'))}
+</div>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1.2fr; gap: 20px; font-size: 14px; line-height: 1.6;">
+<div>
+    <div style="color: #667879; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em; margin-bottom: 4px;">Información del Expediente</div>
+    <b>Expte:</b> {texto(demanda.get('expediente')) or 'S/E'}<br>
+    <b>Origen:</b> {texto(demanda.get('origen'))}<br>
+    <b>Acción:</b> {texto(demanda.get('accion'))}<br>
+    <b>Responsable:</b> {texto(demanda.get('responsable')) or 'Sin asignar'}
+</div>
+<div>
+    <div style="color: #667879; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em; margin-bottom: 4px;">Ubicación y Contacto</div>
+    📍 {texto(demanda.get('domicilio'))} — <span style="color: #006B68; font-weight: 600;">{texto(demanda.get('barrio'))}</span><br>
+    📞 {texto(demanda.get('contacto'))}<br>
+    🆔 DNI: {texto(demanda.get('dni'))}<br>
+    📅 Ingreso: {fecha_corta(demanda.get('fecha_ingreso'))}
+</div>
+</div>
+
+<div style="margin-top: 25px;">
+<div style="font-weight: 700; color: #1F2D2F; margin-bottom: 10px; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+    📜 Historial acumulado
+</div>
+<div class="historial-box" style="max-height: 160px; font-size: 13px;">{historial_html}</div>
+</div>
+</div>
+        """
+        st.markdown(ficha_html, unsafe_allow_html=True)
+
+        # --- MODO EDICIÓN: FORMULARIO (WIDGETS) ---
+        if modo_edicion:
+            st.divider()
+            st.markdown("##### 📝 Formulario de Edición")
+            
+            with st.container(border=True):
+                categoria, estados = estados_para_demanda(demanda)
+                
+                # Fila 1: Gestión
+                ce1, ce2, ce3 = st.columns(3)
+                estado_val = ce1.selectbox("Estado", estados, index=estados.index(demanda.get("estado")) if demanda.get("estado") in estados else 0)
+                prioridad_val = ce2.selectbox("Prioridad", PRIORIDADES, index=PRIORIDADES.index(demanda.get("prioridad")) if demanda.get("prioridad") in PRIORIDADES else 2)
+                responsable_val = ce3.selectbox("Responsable", [""] + RESPONSABLES, index=([""] + RESPONSABLES).index(demanda.get("responsable") or ""))
+                
+                # Fila 2: Titular
+                ce4, ce5, ce6 = st.columns(3)
+                apellido_v = ce4.text_input("Apellido", value=texto(demanda.get("apellido")))
+                nombre_v = ce5.text_input("Nombre", value=texto(demanda.get("nombre")))
+                dni_v = ce6.text_input("DNI", value=texto(demanda.get("dni")))
+                
+                # Fila 3: Ubicación
+                ce7, ce8, ce9 = st.columns(3)
+                dom_v = ce7.text_input("Domicilio", value=texto(demanda.get("domicilio")))
+                bar_v = ce8.text_input("Barrio", value=texto(demanda.get("barrio")))
+                con_v = ce9.text_input("Contacto", value=texto(demanda.get("contacto")))
+                
+            nueva_acc_v = st.text_area(
+                "🆕 Nueva acción / actualización de historial", 
+                height=100, 
+                placeholder="Escribí aquí el resumen de la gestión realizada...", 
+                key=f"nueva_acc_{did}"
             )
 
-        st.text_area(
-            "Historial",
-            value=texto(demanda.get("observaciones")),
-            height=120,
-            disabled=True,
-        )
-        nueva_accion = st.text_area(
-            "Nueva accion / actualizacion",
-            height=90,
-            placeholder="Opcional. Los cambios de campos se agregan automaticamente.",
-        )
+    with col_actions:
+        st.markdown("#### Acciones")
+        if not modo_edicion:
+            if st.button("🔓 Habilitar edición", use_container_width=True, help="Habilita los campos para modificar los datos"):
+                st.session_state["editar_demanda_id"] = did
+                st.rerun()
+        else:
+            if st.button("💾 Guardar cambios", type="primary", use_container_width=True):
+                nuevos_valores = {
+                    "estado": estado_val, 
+                    "prioridad": prioridad_val, 
+                    "responsable": responsable_val or None,
+                    "apellido": apellido_v.strip() or None, 
+                    "nombre": nombre_v.strip() or None, 
+                    "dni": dni_v.strip() or None,
+                    "domicilio": dom_v.strip() or None, 
+                    "barrio": bar_v.strip() or None, 
+                    "contacto": con_v.strip() or None,
+                }
+                # Obtenemos el texto del área de texto usando la clave única
+                texto_nueva_accion = st.session_state.get(f"nueva_acc_{did}", "")
+                cambios = detectar_cambios(demanda, nuevos_valores)
+                
+                if not cambios and not limpiar(texto_nueva_accion):
+                    st.info("No hay cambios para guardar.")
+                else:
+                    try:
+                        actualizar_demanda(did, {
+                            **nuevos_valores,
+                            "observaciones": agregar_al_historial(demanda.get("observaciones"), texto_nueva_accion, cambios)
+                        })
+                        st.toast("✅ Cambios guardados con éxito.")
+                        st.session_state["editar_demanda_id"] = None
+                        if f"nueva_acc_{did}" in st.session_state:
+                            del st.session_state[f"nueva_acc_{did}"]
+                        st.rerun()
+                    except Exception as e:
+                        mostrar_error_supabase(e)
 
-        with st.expander("Datos personales"):
-            col_apellido, col_nombre, col_dni = st.columns(3)
-            with col_apellido:
-                apellido = st.text_input("Apellido", value=texto(demanda.get("apellido")))
-            with col_nombre:
-                nombre = st.text_input("Nombre", value=texto(demanda.get("nombre")))
-            with col_dni:
-                dni = st.text_input("DNI", value=texto(demanda.get("dni")))
+            if st.button("🚫 Cancelar edición", use_container_width=True):
+                st.session_state["editar_demanda_id"] = None
+                st.rerun()
 
-            col_domicilio, col_barrio, col_contacto = st.columns(3)
-            with col_domicilio:
-                domicilio = st.text_input("Domicilio", value=texto(demanda.get("domicilio")))
-            with col_barrio:
-                barrio = st.text_input("Barrio", value=texto(demanda.get("barrio")))
-            with col_contacto:
-                contacto = st.text_input("Contacto", value=texto(demanda.get("contacto")))
-
-        col_guardar, col_cerrar = st.columns(2)
-        with col_guardar:
-            actualizar = st.form_submit_button("Actualizar", type="primary", use_container_width=True)
-        with col_cerrar:
-            cerrar = st.form_submit_button("Cerrar demanda", use_container_width=True)
-
-    if actualizar:
-        nuevos_valores = {
-            "estado": estado,
-            "prioridad": prioridad,
-            "responsable": responsable or None,
-            "apellido": apellido.strip() or None,
-            "nombre": nombre.strip() or None,
-            "dni": dni.strip() or None,
-            "domicilio": domicilio.strip() or None,
-            "barrio": barrio.strip() or None,
-            "contacto": contacto.strip() or None,
-        }
-        cambios = detectar_cambios(demanda, nuevos_valores)
-        try:
-            actualizar_demanda(
-                demanda["id_demanda"],
-                {
-                    **nuevos_valores,
-                    "observaciones": agregar_al_historial(demanda.get("observaciones"), nueva_accion, cambios),
-                },
-            )
-        except Exception as error:
-            mostrar_error_supabase(error)
-            return
-        st.success("Demanda actualizada.")
-        st.rerun()
-
-    if cerrar:
-        try:
-            cerrar_demanda(demanda["id_demanda"])
-        except Exception as error:
-            mostrar_error_supabase(error)
-            return
-        st.success("Demanda cerrada.")
-        st.rerun()
+        # --- CIERRE DE DEMANDA (Siempre visible) ---
+        st.markdown("<br>", unsafe_allow_html=True)
+        with st.expander("📁 Finalizar Expediente", expanded=False):
+            st.write("Marcar como resuelta y archivar.")
+            confirma_cierre = st.checkbox("Confirmo el cierre definitivo", key=f"conf_cierre_{did}")
+            if st.button("📁 Cerrar demanda", disabled=not confirma_cierre, use_container_width=True, type="secondary"):
+                try:
+                    cerrar_demanda(did)
+                    st.toast(f"Demanda #{did} cerrada correctamente.")
+                    st.rerun()
+                except Exception as e:
+                    mostrar_error_supabase(e)
 
 
 st.set_page_config(page_title="Demandas", layout="wide")
-st.title("Demandas")
+
+aplicar_estilos_globales()
+
+page_header(
+    "Demandas",
+    "Carga, consulta y actualización de solicitudes ingresadas al área.",
+    "Municipalidad de Tafí Viejo",
+)
 
 tab_cargar, tab_pendientes = st.tabs(["Cargar demanda", "Pendientes"])
+
 with tab_cargar:
     cargar_demanda_tab()
+
 with tab_pendientes:
     pendientes_tab()

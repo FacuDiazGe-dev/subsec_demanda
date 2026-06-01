@@ -1,774 +1,760 @@
-﻿import pandas as pd
+from datetime import date, datetime
+import unicodedata
+
+import pandas as pd
 import streamlit as st
-from datetime import datetime
 
-from services.demandas_service import listar_demandas_abiertas
-from services.materiales_base_service import listar_materiales_base_activos
-from services.materiales_orden_service import (
-    crear_materiales_orden,
-    eliminar_materiales_por_orden,
-    listar_materiales_por_orden,
+from services import obras_service
+from services.demandas_service import crear_demanda, listar_demandas_abiertas
+from services.listado_tareas_service import listar_tareas_base
+from services.materiales_orden_service import crear_materiales_orden
+from services.notas_rapidas_obra_service import actualizar_nota_rapida, crear_nota_rapida, listar_notas_rapidas
+from services.ordenes_service import crear_orden_material
+from services.seguimiento_obra_service import crear_seguimiento
+from services.tareas_obra_service import (
+    actualizar_tarea_cantidad_estado,
+    crear_tarea_obra,
+    eliminar_tarea_obra,
+    listar_tareas_por_obra,
 )
-from services.ordenes_service import (
-    ESTADOS_CIERRE,
-    actualizar_orden_material,
-    crear_orden_material,
-    eliminar_orden_material,
-    listar_ordenes_con_demanda,
-    obtener_datos_pdf_orden,
-)
-from services.pdf_orden_service import generar_pdf_orden
+
+actualizar_obra_servicio = obras_service.actualizar_obra
+crear_obra = obras_service.crear_obra
+listar_obras_con_demanda = obras_service.listar_obras_con_demanda
+obtener_obra_con_demanda = obras_service.obtener_obra_con_demanda
+actualizar_obs_obras = getattr(obras_service, "actualizar_obs_obras", None)
+agregar_obs_obras_del_dia = getattr(obras_service, "agregar_obs_obras_del_dia", None)
+
+TIPOS_OBRA_PROGRAMA = ["HAVITA", "MI BANO", "EMERGENCIA HABITACIONAL", "OTROS"]
+MODALIDADES_EJECUCION = ["Cuadrilla HAVITA", "Mano de obra propia", "Mixta", "Cuadrilla municipal"]
+ESTADOS_OBRA = ["Para firmar acta", "Acta firmada", "Para obra", "En ejecucion", "Suspendida", "Ejecutada", "Cancelada"]
+ESTADOS_GESTION_OBRA = ["En Ejecucion", "Seguimiento", "Ejecutada", "Cerrada", "Suspendida"]
+RESPONSABLES_TECNICOS = ["Facundo", "Pedro", "Bea", "Iris", "Guillo"]
 
 
-ESTADOS_ORDEN = [
-    "Pedido entrega",
-    "Pedido retiro",
-    "Pendiente de retiro",
-    "Pendiente de entrega",
-    "En deposito",
-    "Entrega parcial",
-    "Entregado",
-    "Cancelado",
-]
-
-TIPOS_STOCK = {
-    "gestion de stock",
-    "compra para emergencias",
-    "reposicion de deposito",
-    "insumos internos",
-    "herramientas / equipamiento",
-}
+def txt(v): return "" if v is None else str(v)
+def clean(v): return txt(v).strip()
 
 
-def texto(valor):
-    return "" if valor is None else str(valor)
+def normalizar(v):
+    s = clean(v)
+    try:
+        s = s.encode("latin1").decode("utf-8")
+    except Exception:
+        pass
+    s = unicodedata.normalize("NFKD", s)
+    return "".join(ch for ch in s if not unicodedata.combining(ch)).lower()
 
 
-def limpiar(valor):
-    return texto(valor).strip()
-
-
-def fecha_visible(valor):
-    valor = limpiar(valor)
-    if not valor:
+def fecha_corta(v):
+    v = clean(v)
+    if not v:
         return "-"
-    partes = valor[:10].split("-")
-    if len(partes) == 3 and all(partes):
-        return f"{partes[2]}/{partes[1]}/{partes[0]}"
-    return valor
+    p = v[:10].split("-")
+    return f"{p[2]}/{p[1]}/{p[0][2:]}" if len(p) == 3 else v
 
 
-def fecha_corta_visible(valor):
-    valor = limpiar(valor)
-    if not valor:
-        return ""
-    partes = valor[:10].split("-")
-    if len(partes) == 3 and all(partes):
-        return f"{partes[2]}/{partes[1]}/{partes[0][2:]}"
-    return valor
+def show_error(error):
+    st.error(f"No se pudo completar la operacion en Supabase: {error}")
 
 
-def parsear_fecha_corta_ddmmaa(valor):
-    valor = limpiar(valor)
-    if not valor:
+def prioridad_rank(p):
+    p = clean(p).lower()
+    if p.startswith("1"):
+        return 1
+    if p.startswith("2"):
+        return 2
+    if p.startswith("3"):
+        return 3
+    if p.startswith("4"):
+        return 4
+    if p.startswith("5"):
+        return 5
+    return 9
+
+
+def parse_cant(v):
+    v = clean(v)
+    if not v:
         return None
     try:
-        fecha = datetime.strptime(valor, "%d/%m/%y").date()
+        return float(v)
     except ValueError:
+        return "__INVALID__"
+
+
+def parse_fecha_input(v):
+    v = clean(v)
+    if not v:
         return None
-    return fecha.isoformat()
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y"):
+        try:
+            return datetime.strptime(v, fmt).date().isoformat()
+        except ValueError:
+            pass
+    return "__INVALID__"
 
 
-def leyenda_fecha_entrega(estado):
-    estado_limpio = limpiar(estado).lower()
-    if estado_limpio == "pendiente de retiro":
-        return "Fecha estimada de retiro:"
-    if estado_limpio == "pendiente de entrega":
-        return "Fecha estimada de entrega:"
-    if estado_limpio == "en deposito":
-        return "Retirado el dia:"
-    if estado_limpio == "entregado":
-        return "Fecha de entrega:"
-    return ""
-
-
-def mostrar_error_supabase(error):
-    mensaje = str(error)
-    if "row-level security" in mensaje:
-        st.error(
-            "Supabase no permite esta operacion con la anon key. "
-            "Revisar las politicas RLS de la tabla correspondiente."
-        )
-        return
-    st.error(f"No se pudo completar la operacion en Supabase: {mensaje}")
-
-
-def formatear_cantidad(valor):
-    try:
-        numero = float(valor)
-    except (TypeError, ValueError):
-        return ""
-    if numero.is_integer():
-        return str(int(numero))
-    return f"{numero:.2f}".rstrip("0").rstrip(".")
+def agregar_obs_bitacora(obs_actual, mensaje):
+    entrada = f"|| {date.today().strftime('%d/%m/%y')} - {mensaje}"
+    return f"{entrada} {clean(obs_actual)}" if clean(obs_actual) else entrada
 
 
 @st.cache_data(ttl=300)
-def cargar_opciones_materiales_base():
-    materiales = listar_materiales_base_activos()
-    opciones = []
-    etiqueta_a_material = {}
-    for item in materiales:
-        material = limpiar(item.get("material"))
-        if not material:
+def tareas_base_opciones():
+    cat = listar_tareas_base()
+    opts, mapa = [], {}
+    for it in cat:
+        d = clean(it.get("descripcion_tarea"))
+        u = clean(it.get("unidad_tarea"))
+        if not d:
             continue
-        tipo = limpiar(item.get("tipo"))
-        unidad = limpiar(item.get("unidad"))
-        partes = [material]
-        if tipo:
-            partes.append(tipo)
-        if unidad:
-            partes.append(unidad)
-        etiqueta = " - ".join(partes)
-        opciones.append(etiqueta)
-        etiqueta_a_material[etiqueta] = material
-    return opciones, etiqueta_a_material
+        opts.append(f"{d} | {u}" if u else d)
+        mapa[d] = u
+    return opts, mapa
 
 
-def _key_materiales_tmp(prefijo):
-    return f"{prefijo}_materiales_tmp"
-
-
-def _key_material_select(prefijo):
-    return f"{prefijo}_material_select"
-
-
-def _key_cantidad_input(prefijo):
-    return f"{prefijo}_cantidad_input"
-
-
-def inicializar_materiales_tmp(prefijo):
-    clave_lista = _key_materiales_tmp(prefijo)
-    if clave_lista not in st.session_state:
-        st.session_state[clave_lista] = []
-
-
-def seleccionar_sugerencia_material(prefijo, material):
-    st.session_state[_key_material_select(prefijo)] = material
-
-
-def agregar_material_tmp(prefijo):
-    opciones, etiqueta_a_material = cargar_opciones_materiales_base()
-    seleccion = st.session_state.get(_key_material_select(prefijo))
-    material = limpiar(etiqueta_a_material.get(seleccion, seleccion))
-    cantidad = formatear_cantidad(st.session_state.get(_key_cantidad_input(prefijo)))
-    if not material:
+def render_tareas_obra(obra):
+    st.markdown("#### Tareas de la obra")
+    try:
+        tareas = listar_tareas_por_obra(obra.get("id_obra"))
+    except Exception as e:
+        show_error(e)
         return
 
-    st.session_state[_key_materiales_tmp(prefijo)].append(
-        {"Material": material, "cantidad": cantidad}
-    )
-    st.session_state[_key_material_select(prefijo)] = ""
-    st.session_state[_key_cantidad_input(prefijo)] = 1.0
+    # estado visual / edicion
+    mk = f"modo_tareas_{obra.get('id_obra')}"
+    if mk not in st.session_state:
+        st.session_state[mk] = False
+    edit_mode = st.session_state[mk]
 
+    c1, c2 = st.columns([1, 3])
+    with c1:
+        if st.button("Salir de edicion" if edit_mode else "Activar modo edicion", key=f"toggle_{obra.get('id_obra')}", use_container_width=True):
+            st.session_state[mk] = not edit_mode
+            st.rerun()
+    with c2:
+        st.caption("Visual: solo lectura. Edicion: editar tabla y agregar tareas.")
 
-def quitar_material_tmp(prefijo, idx):
-    materiales = st.session_state.get(_key_materiales_tmp(prefijo), [])
-    if 0 <= idx < len(materiales):
-        materiales.pop(idx)
-        st.session_state[_key_materiales_tmp(prefijo)] = materiales
-
-
-def limpiar_materiales_tmp(prefijo):
-    st.session_state[_key_materiales_tmp(prefijo)] = []
-    st.session_state[_key_material_select(prefijo)] = ""
-    st.session_state[_key_cantidad_input(prefijo)] = 1.0
-
-
-def editor_materiales_simple(prefijo, titulo):
-    inicializar_materiales_tmp(prefijo)
-    st.markdown(f"#### {titulo}")
-
-    opciones, _ = cargar_opciones_materiales_base()
-    st.selectbox(
-        "Material",
-        options=opciones,
-        index=None,
-        key=_key_material_select(prefijo),
-        placeholder="Escriba para sugerir o cargue uno nuevo",
-        accept_new_options=True,
-        filter_mode="contains",
-    )
-
-    st.caption("Puede elegir sugerencia o escribir material nuevo.")
-
-    col_cantidad, col_add = st.columns([2, 1])
-    with col_cantidad:
-        st.number_input(
-            "Cantidad",
-            min_value=0.0,
-            step=1.0,
-            format="%.2f",
-            key=_key_cantidad_input(prefijo),
-        )
-    with col_add:
-        st.write("")
-        st.button(
-            "Agregar material",
-            key=f"{prefijo}_agregar_material",
-            type="primary",
-            use_container_width=True,
-            on_click=agregar_material_tmp,
-            args=(prefijo,),
-        )
-
-    materiales_tmp = st.session_state.get(_key_materiales_tmp(prefijo), [])
-    if materiales_tmp:
-        st.caption("Materiales a guardar")
+    if tareas and not edit_mode:
         st.dataframe(
-            pd.DataFrame(materiales_tmp)[["Material", "cantidad"]],
+            pd.DataFrame(
+                [
+                    {
+                        "id_tarea": t.get("id_tarea"),
+                        "descripcion_tarea": txt(t.get("descripcion_tarea")),
+                        "unidad_tarea": txt(t.get("unidad_tarea")),
+                        "cant_tarea": txt(t.get("cant_tarea")),
+                        "estado_tarea": "Ejecutada" if t.get("estado_tarea") else "Sin ejecutar",
+                        "fecha_actualizacion": fecha_corta(t.get("fecha_actualizacion")),
+                    }
+                    for t in tareas
+                ]
+            ),
             hide_index=True,
             use_container_width=True,
-            height=180,
+            height=220,
         )
-        for idx, material in enumerate(materiales_tmp):
-            col_txt, col_btn = st.columns([4, 1])
-            with col_txt:
-                st.caption(f"{idx + 1}. {material.get('Material')} | {material.get('cantidad', '')}")
-            with col_btn:
-                st.button(
-                    "Quitar",
-                    key=f"{prefijo}_quitar_{idx}",
-                    type="secondary",
-                    use_container_width=True,
-                    on_click=quitar_material_tmp,
-                    args=(prefijo, idx),
-                )
-        st.button(
-            "Limpiar lista",
-            key=f"{prefijo}_limpiar_lista",
-            type="secondary",
-            use_container_width=True,
-            on_click=limpiar_materiales_tmp,
-            args=(prefijo,),
-        )
+    elif not tareas:
+        st.info("Esta obra no tiene tareas cargadas.")
 
-    return st.session_state.get(_key_materiales_tmp(prefijo), [])
-
-
-def mostrar_materiales_orden(n_orden):
-    try:
-        materiales = listar_materiales_por_orden(n_orden)
-    except Exception as error:
-        mostrar_error_supabase(error)
+    opts, mapa_unidad = tareas_base_opciones()
+    if not opts:
+        st.warning("No hay tareas en listado_tareas.")
         return
 
-    if not materiales:
-        st.info("Esta orden no tiene materiales asociados.")
-        return
-
-    st.dataframe(
-        pd.DataFrame(materiales)[["Material", "cantidad"]],
-        use_container_width=True,
-        hide_index=True,
-        height=240,
-    )
-
-
-def nombre_archivo_pdf(orden, demanda):
-    expediente = limpiar(demanda.get("expediente")).replace("/", "-").replace("\\", "-")
-    if not expediente:
-        expediente = "sin-expediente"
-    return f"orden_N{orden.get('n_orden')}_expte_{expediente}.pdf"
-
-
-def beneficiario(demanda):
-    nombre_completo = f"{texto(demanda.get('apellido'))}, {texto(demanda.get('nombre'))}".strip(", ")
-    return nombre_completo if nombre_completo else "-"
-
-
-def domicilio_completo(demanda):
-    domicilio = limpiar(demanda.get("domicilio"))
-    barrio = limpiar(demanda.get("barrio"))
-    if domicilio and barrio:
-        return f"{domicilio} - {barrio}"
-    return domicilio or barrio or "-"
-
-
-def tipo_materiales_desde_obs(demanda):
-    obs = limpiar(demanda.get("observaciones"))
-    prefijo = "tipo materiales:"
-    if obs.lower().startswith(prefijo):
-        resto = obs[len(prefijo):].strip()
-        return resto.split(".")[0].strip()
-    return ""
-
-
-def es_demanda_stock(demanda):
-    accion = limpiar(demanda.get("accion")).lower()
-    if accion not in {"materiales", "entregar materiales"}:
-        return False
-    tipo = tipo_materiales_desde_obs(demanda).lower()
-    return tipo in TIPOS_STOCK
-
-
-def mostrar_card_operativa(orden, demanda):
-    with st.container(border=True):
-        col_orden, col_estado, col_fecha = st.columns([1.1, 1, 1])
-        with col_orden:
-            st.caption("Orden")
-            st.markdown(f"**N° {texto(orden.get('n_orden'))}**")
-        with col_estado:
-            st.caption("Estado de la orden")
-            st.write(texto(orden.get("estado")))
-        with col_fecha:
-            st.caption("Fecha de emision")
-            st.write(fecha_visible(orden.get("fecha_emision")))
-            leyenda_entrega = leyenda_fecha_entrega(orden.get("estado"))
-            if leyenda_entrega:
-                st.caption(leyenda_entrega)
-                st.write(fecha_visible(orden.get("fecha_entrega")))
-
-        st.divider()
-
-        if es_demanda_stock(demanda):
-            col_expte, col_destino, col_tipo = st.columns([1, 1, 2])
-            with col_expte:
-                st.caption("Expediente")
-                st.markdown(f"**{texto(demanda.get('expediente'))}**")
-            with col_destino:
-                st.caption("Destino")
-                st.write("Deposito / Stock")
-            with col_tipo:
-                st.caption("Tipo")
-                st.write(tipo_materiales_desde_obs(demanda) or "Gestion de stock")
-        else:
-            col_expte, col_beneficiario, col_dni = st.columns([1, 2, 1])
-            with col_expte:
-                st.caption("Expediente")
-                st.markdown(f"**{texto(demanda.get('expediente'))}**")
-            with col_beneficiario:
-                st.caption("Beneficiario")
-                st.markdown(f"**{beneficiario(demanda)}**")
-            with col_dni:
-                st.caption("DNI")
-                st.markdown(f"**{texto(demanda.get('dni'))}**")
-
-            col_domicilio, col_contacto = st.columns([2, 1])
-            with col_domicilio:
-                st.caption("Domicilio")
-                st.write(domicilio_completo(demanda))
-            with col_contacto:
-                st.caption("Contacto")
-                st.write(texto(demanda.get("contacto")))
-
-        st.divider()
-
-        col_origen, col_prioridad, col_accion, col_responsable = st.columns(4)
-        with col_origen:
-            st.caption("Origen / autoriza")
-            st.write(texto(orden.get("origen")))
-        with col_prioridad:
-            st.caption("Prioridad")
-            st.write(texto(demanda.get("prioridad")))
-        with col_accion:
-            st.caption("Accion")
-            st.write(texto(demanda.get("accion")))
-        with col_responsable:
-            st.caption("Responsable")
-            st.write(texto(demanda.get("responsable")))
-
-
-def mostrar_bloque_instruccion(orden):
-    with st.container(border=True):
-        st.markdown("#### Instruccion / tarea")
-        st.write(texto(orden.get("instrucciones_tarea")))
-
-
-def mostrar_bloque_materiales(n_orden):
-    with st.container(border=True):
-        st.markdown("#### Listado de materiales")
-        mostrar_materiales_orden(n_orden)
-
-
-def mostrar_bloque_historial(historial):
-    with st.container(border=True, height=260):
-        st.markdown("#### Historial")
-        entradas = [limpiar(entrada) for entrada in texto(historial).split("||") if limpiar(entrada)]
-        if not entradas:
-            st.info("Sin historial registrado.")
-            return
-        for entrada in entradas:
-            st.write(entrada)
-            st.divider()
-
-
-def etiqueta_demanda(demanda):
-    return (
-        f"ID {demanda.get('id_demanda')} | "
-        f"Expte {texto(demanda.get('expediente'))} | "
-        f"{texto(demanda.get('apellido'))}, {texto(demanda.get('nombre'))} | "
-        f"{texto(demanda.get('barrio'))} | "
-        f"{texto(demanda.get('accion'))} | "
-        f"{texto(demanda.get('estado'))}"
-    )
-
-
-def mostrar_ficha_demanda(demanda):
-    if not demanda:
-        st.warning("No se encontraron datos de la demanda vinculada.")
-        return
-
-    if es_demanda_stock(demanda):
-        col_1, col_2, col_3, col_4 = st.columns(4)
-        with col_1:
-            st.metric("ID demanda", texto(demanda.get("id_demanda")))
-            st.caption(f"Expte: {texto(demanda.get('expediente'))}")
-        with col_2:
-            st.write("**Destino:** Deposito / Stock")
-            st.caption(f"Tipo: {tipo_materiales_desde_obs(demanda) or 'Gestion de stock'}")
-        with col_3:
-            st.write(f"**Origen:** {texto(demanda.get('origen'))}")
-            st.caption(f"Prioridad: {texto(demanda.get('prioridad'))}")
-        with col_4:
-            st.write(f"**Accion:** {texto(demanda.get('accion'))}")
-            st.caption(f"Responsable: {texto(demanda.get('responsable'))}")
-    else:
-        col_1, col_2, col_3, col_4 = st.columns(4)
-        with col_1:
-            st.metric("ID demanda", texto(demanda.get("id_demanda")))
-            st.caption(f"Expte: {texto(demanda.get('expediente'))}")
-        with col_2:
-            st.write(f"**Persona:** {texto(demanda.get('apellido'))}, {texto(demanda.get('nombre'))}")
-            st.caption(f"DNI: {texto(demanda.get('dni'))}")
-        with col_3:
-            st.write(f"**Domicilio:** {texto(demanda.get('domicilio'))}")
-            st.caption(f"Barrio: {texto(demanda.get('barrio'))}")
-        with col_4:
-            st.write(f"**Contacto:** {texto(demanda.get('contacto'))}")
-            st.caption(f"Responsable: {texto(demanda.get('responsable'))}")
-
-    col_a, col_b, col_c, col_d = st.columns(4)
-    with col_a:
-        st.caption(f"Origen: {texto(demanda.get('origen'))}")
-    with col_b:
-        st.caption(f"Prioridad: {texto(demanda.get('prioridad'))}")
-    with col_c:
-        st.caption(f"Accion: {texto(demanda.get('accion'))}")
-    with col_d:
-        st.caption(f"Estado: {texto(demanda.get('estado'))}")
-
-
-def nueva_orden_tab():
-    demandas = listar_demandas_abiertas()
-    demandas = [
-        demanda
-        for demanda in demandas
-        if limpiar(demanda.get("accion")).lower() in {"obra", "emergencia", "emerencia"} or es_demanda_stock(demanda)
-    ]
-    if not demandas:
-        st.info("No hay demandas abiertas con accion Obra/Emergencia para vincular una orden.")
-        return
-
-    opciones = {etiqueta_demanda(demanda): demanda for demanda in demandas}
-    seleccion = st.selectbox("Demanda vinculada", list(opciones.keys()))
-    demanda = opciones[seleccion]
-
-    st.markdown("#### Referencia de demanda")
-    mostrar_ficha_demanda(demanda)
-
-    instrucciones_tarea = st.text_area(
-        "Instrucciones de tarea",
-        height=120,
-        placeholder="Retirar de Corralon Brito y llevar a deposito.",
-    )
-    estado_default = "Pedido retiro" if es_demanda_stock(demanda) else "Pedido entrega"
-    estado = st.selectbox("Estado inicial", ESTADOS_ORDEN, index=ESTADOS_ORDEN.index(estado_default))
-
-    agregar_materiales = st.checkbox("Agregar materiales asociados")
-    materiales_nuevos = []
-    if agregar_materiales:
-        materiales_nuevos = editor_materiales_simple(
-            "nueva_orden", "Materiales asociados a la orden (opcional)"
-        )
-
-    crear = st.button("Crear orden", type="primary", use_container_width=True)
-
-    if crear:
-        if not limpiar(instrucciones_tarea):
-            st.error("Completa las instrucciones de tarea antes de crear la orden.")
-            return
-
-        try:
-            orden = crear_orden_material(
+    if edit_mode and tareas:
+        st.markdown("##### Edicion directa de tareas")
+        df_edit = pd.DataFrame(
+            [
                 {
-                    "id_demanda": demanda.get("id_demanda"),
-                    "origen": demanda.get("origen"),
-                    "estado": estado,
-                    "instrucciones_tarea": instrucciones_tarea,
+                    "id_tarea": t.get("id_tarea"),
+                    "descripcion_tarea": txt(t.get("descripcion_tarea")),
+                    "unidad_tarea": txt(t.get("unidad_tarea")),
+                    "cant_tarea": txt(t.get("cant_tarea")),
+                    "estado_tarea": bool(t.get("estado_tarea")),
+                    "Eliminar": False,
                 }
-            )
-            if orden and materiales_nuevos:
-                crear_materiales_orden(orden["n_orden"], materiales_nuevos)
-                limpiar_materiales_tmp("nueva_orden")
-        except Exception as error:
-            mostrar_error_supabase(error)
-            return
-
-        st.success(f"Orden creada correctamente. N orden: {orden.get('n_orden') if orden else ''}")
-
-
-def opciones_filtro(df, columna):
-    if columna not in df.columns:
-        return []
-    valores = [limpiar(valor) for valor in df[columna].dropna().tolist()]
-    return sorted({valor for valor in valores if valor})
-
-
-def aplicar_filtros_ordenes(df):
-    with st.expander("Filtros", expanded=False):
-        busqueda = st.text_input("Buscar", placeholder="N orden, ID demanda, expediente, apellido, nombre...")
-        col_1, col_2, col_3 = st.columns(3)
-        with col_1:
-            filtro_estado = st.multiselect("Estado", opciones_filtro(df, "estado"))
-        with col_2:
-            filtro_origen = st.multiselect("Origen", opciones_filtro(df, "origen"))
-        with col_3:
-            filtro_barrio = st.multiselect("Barrio", opciones_filtro(df, "barrio"))
-
-    filtrado = df.copy()
-    filtros = {
-        "estado": filtro_estado,
-        "origen": filtro_origen,
-        "barrio": filtro_barrio,
-    }
-    for columna, valores in filtros.items():
-        if valores and columna in filtrado.columns:
-            filtrado = filtrado[filtrado[columna].fillna("").astype(str).isin(valores)]
-
-    busqueda = limpiar(busqueda).lower()
-    if busqueda:
-        columnas_busqueda = [
-            "n_orden",
-            "id_demanda",
-            "expediente",
-            "apellido",
-            "nombre",
-            "barrio",
-            "estado",
-            "origen",
-            "instrucciones_tarea",
-        ]
-        columnas_busqueda = [col for col in columnas_busqueda if col in filtrado.columns]
-        mascara = (
-            filtrado[columnas_busqueda]
-            .fillna("")
-            .astype(str)
-            .agg(" ".join, axis=1)
-            .str.lower()
-            .str.contains(busqueda, regex=False)
+                for t in tareas
+            ]
         )
-        filtrado = filtrado[mascara]
-
-    return filtrado
-
-
-def seguimiento_ordenes_tab():
-    incluir_cerradas = st.toggle("Incluir cerradas", value=False)
-    ordenes = listar_ordenes_con_demanda(incluir_cerradas=incluir_cerradas)
-    if not ordenes:
-        if incluir_cerradas:
-            st.info("No hay ordenes para mostrar.")
-        else:
-            st.info("No hay ordenes pendientes.")
-        return
-
-    df = pd.DataFrame(ordenes)
-    df["beneficiario"] = df.apply(
-        lambda fila: f"{texto(fila.get('apellido'))}, {texto(fila.get('nombre'))}".strip(", "),
-        axis=1,
-    )
-    df_filtrado = aplicar_filtros_ordenes(df)
-    if df_filtrado.empty:
-        st.info("No hay ordenes que coincidan con los filtros.")
-        return
-
-    columnas = [
-        "n_orden",
-        "fecha_emision",
-        "id_demanda",
-        "expediente",
-        "beneficiario",
-        "barrio",
-        "origen",
-        "estado",
-        "instrucciones_tarea",
-    ]
-    columnas_visibles = [col for col in columnas if col in df_filtrado.columns]
-    seleccion_tabla = st.dataframe(
-        df_filtrado[columnas_visibles],
-        use_container_width=True,
-        hide_index=True,
-        height=240,
-        on_select="rerun",
-        selection_mode="single-row",
-        key="tabla_ordenes_pendientes",
-    )
-
-    filas = seleccion_tabla.selection.rows
-    if not filas:
-        st.info("Selecciona una orden desde la tabla para editarla.")
-        return
-
-    orden = df_filtrado.iloc[filas[0]].to_dict()
-    demanda = orden.get("demanda") or {}
-
-    st.divider()
-    st.markdown(f"### Orden seleccionada N° {texto(orden.get('n_orden'))}")
-
-    col_info, col_acciones = st.columns([2, 1])
-    with col_info:
-        mostrar_card_operativa(orden, demanda)
-        mostrar_bloque_instruccion(orden)
-        mostrar_bloque_materiales(orden.get("n_orden"))
-        mostrar_bloque_historial(orden.get("historial"))
-
-    with col_acciones:
-        st.markdown("#### Acciones")
-        if orden.get("fecha_cierre") or orden.get("estado") in ESTADOS_CIERRE:
-            st.warning("Esta orden esta cerrada y no se puede editar.")
-            return
-
-        agregar_materiales = st.checkbox("Agregar nuevos materiales")
-        materiales_nuevos = []
-        if agregar_materiales:
-            materiales_nuevos = editor_materiales_simple(
-                f"orden_{orden.get('n_orden')}", "Agregar materiales a esta orden"
-            )
-
-        with st.container(border=True):
-            st.markdown("##### Actualizar orden")
-            estado_actual = orden.get("estado") if orden.get("estado") in ESTADOS_ORDEN else "Pedido entrega"
-            clave_estado = f"estado_orden_{orden.get('n_orden')}"
-            if clave_estado not in st.session_state:
-                st.session_state[clave_estado] = estado_actual
-            nuevo_estado = st.selectbox(
-                "Estado",
-                ESTADOS_ORDEN,
-                index=ESTADOS_ORDEN.index(st.session_state[clave_estado]),
-                key=clave_estado,
-            )
-
-            with st.form("actualizar_orden_material_form"):
-                fecha_entrega_ingresada = ""
-                if nuevo_estado not in {"Pedido entrega", "Pedido retiro"}:
-                    fecha_entrega_ingresada = st.text_input(
-                        "Fecha de entrega (DD/MM/AA)",
-                        value=fecha_corta_visible(orden.get("fecha_entrega")),
-                        placeholder="28/05/26",
-                    )
-                comentario = st.text_area(
-                    "Comentario para historial",
-                    height=100,
-                    placeholder="Se coordina retiro con deposito.",
-                )
-                actualizar = st.form_submit_button("Actualizar orden", type="primary", use_container_width=True)
-
-        st.divider()
-        st.markdown("##### Descarga / emitir")
-        try:
-            datos_pdf = obtener_datos_pdf_orden(orden.get("n_orden"))
-            if datos_pdf:
-                pdf_bytes = generar_pdf_orden(
-                    datos_pdf["orden"],
-                    datos_pdf["demanda"],
-                    datos_pdf["materiales"],
-                )
-                st.download_button(
-                    label="Descargar orden PDF",
-                    data=pdf_bytes,
-                    file_name=nombre_archivo_pdf(datos_pdf["orden"], datos_pdf["demanda"]),
-                    mime="application/pdf",
-                    use_container_width=True,
-                )
-        except Exception as error:
-            mostrar_error_supabase(error)
-
-        st.divider()
-        st.markdown("#### Zona de peligro")
-        confirmar_eliminacion = st.checkbox(
-            f"Confirmo que quiero eliminar la orden {orden.get('n_orden')}",
-            key=f"confirmar_eliminar_orden_{orden.get('n_orden')}",
-        )
-        eliminar = st.button(
-            "Eliminar orden seleccionada",
-            disabled=not confirmar_eliminacion,
-            type="secondary",
+        edited = st.data_editor(
+            df_edit,
+            hide_index=True,
             use_container_width=True,
+            num_rows="fixed",
+            column_config={
+                "id_tarea": st.column_config.NumberColumn(disabled=True),
+                "descripcion_tarea": st.column_config.TextColumn(disabled=True),
+                "unidad_tarea": st.column_config.TextColumn(disabled=True),
+                "Eliminar": st.column_config.CheckboxColumn(),
+                "estado_tarea": st.column_config.CheckboxColumn(),
+            },
+            key=f"editor_{obra.get('id_obra')}",
+        )
+        if st.button("Guardar cambios de tabla", key=f"save_tab_{obra.get('id_obra')}", type="primary"):
+            mapa_actual = {t.get("id_tarea"): t for t in tareas}
+            try:
+                for _, r in edited.iterrows():
+                    tid = int(r["id_tarea"])
+                    act = mapa_actual.get(tid)
+                    if not act:
+                        continue
+                    if bool(r.get("Eliminar")):
+                        eliminar_tarea_obra(tid)
+                        if agregar_obs_obras_del_dia:
+                            agregar_obs_obras_del_dia(obra.get("id_obra"), f"Se elimino tarea: {clean(act.get('descripcion_tarea'))}")
+                        continue
+                    dn = clean(act.get("descripcion_tarea"))
+                    cn = parse_cant(r.get("cant_tarea"))
+                    if cn == "__INVALID__":
+                        st.warning(f"cant_tarea invalida en #{tid}.")
+                        return
+                    ca = parse_cant(act.get("cant_tarea"))
+                    en = bool(r.get("estado_tarea"))
+                    ea = bool(act.get("estado_tarea"))
+                    if cn != ca or en != ea:
+                        actualizar_tarea_cantidad_estado(tid, cn, en)
+                        if agregar_obs_obras_del_dia:
+                            cambios = []
+                            if cn != ca:
+                                cambios.append(f"cantidad {ca if ca is not None else '-'} -> {cn if cn is not None else '-'}")
+                            if en != ea:
+                                cambios.append(
+                                    f"estado {'Ejecutada' if ea else 'Sin ejecutar'} -> {'Ejecutada' if en else 'Sin ejecutar'}"
+                                )
+                            detalle = "; ".join(cambios) if cambios else "sin detalle"
+                            agregar_obs_obras_del_dia(obra.get("id_obra"), f"Se modifico tarea: {dn}. {detalle}")
+            except Exception as e:
+                show_error(e)
+                return
+            st.success("Cambios guardados.")
+            st.rerun()
+
+    if not edit_mode:
+        return
+
+    st.markdown("##### Agregar nueva tarea")
+    with st.form(f"add_t_{obra.get('id_obra')}"):
+        sel = st.selectbox("Tarea", options=opts, index=None, placeholder="Selecciona tarea", accept_new_options=False, filter_mode="contains")
+        desc = clean(sel.split(" | ")[0]) if sel else ""
+        unidad = mapa_unidad.get(desc, "")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.text_input("unidad_tarea", value=unidad, disabled=True)
+        with c2:
+            cant = st.text_input("cant_tarea")
+        add = st.form_submit_button("Agregar tarea", type="primary")
+    if add:
+        if not desc:
+            st.warning("Selecciona una tarea existente.")
+            return
+        cn = parse_cant(cant)
+        if cn == "__INVALID__":
+            st.warning("cant_tarea debe ser numerica.")
+            return
+        try:
+            crear_tarea_obra(obra.get("id_obra"), desc, unidad or None, cn)
+            if agregar_obs_obras_del_dia:
+                agregar_obs_obras_del_dia(obra.get("id_obra"), f"Se agrego tarea: {desc}")
+        except Exception as e:
+            show_error(e)
+            return
+        st.success("Tarea agregada.")
+        st.rerun()
+
+
+def tablero_tab():
+    st.subheader("Tablero de obras")
+    obras = listar_obras_con_demanda()
+    st.markdown("### Obras registradas")
+    for o in obras:
+        with st.container(border=True):
+            st.markdown(f"**{clean(o.get('apellido'))}, {clean(o.get('nombre'))} — Expte. {txt(o.get('expediente')) or '-'}**")
+            st.caption(f"Estado: {txt(o.get('estado_obra'))} | Modalidad: {txt(o.get('modalidad_ejecucion')) or '-'} | Responsable: {txt(o.get('responsable_tecnico')) or '-'}")
+            st.caption((txt(o.get("descripcion_obra")) or "-")[:160])
+    st.divider()
+    st.markdown("### Demandas para generar obra")
+    ids = {o.get("id_demanda") for o in obras if o.get("id_demanda") is not None}
+    dms = [d for d in listar_demandas_abiertas() if clean(d.get("accion")).lower() in {"obra", "emergencia"} and d.get("id_demanda") not in ids]
+    dms.sort(key=lambda d: (prioridad_rank(d.get("prioridad")), d.get("id_demanda") or 999999))
+    if not dms:
+        st.info("No hay demandas pendientes para crear obra.")
+        return
+    for d in dms:
+        with st.container(border=True):
+            st.markdown(f"**{txt(d.get('apellido'))}, {txt(d.get('nombre'))} — Expte. {txt(d.get('expediente')) or '-'}**")
+            st.caption(f"Accion: {txt(d.get('accion'))} | Prioridad: {txt(d.get('prioridad')) or '-'}")
+            col_chk, col_txt = st.columns([1.2, 2.8])
+            clave_chk = f"tb_validar_{d.get('id_demanda')}"
+            with col_chk:
+                validar = st.checkbox("Validar pedido", key=clave_chk)
+            with col_txt:
+                st.caption("Activa para habilitar creacion de obra con datos por defecto.")
+
+            if validar:
+                tipo_default = "EMERGENCIA HABITACIONAL" if clean(d.get("accion")).lower() == "emergencia" else "HAVITA"
+                with st.form(f"tb_form_crear_{d.get('id_demanda')}"):
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        tipo = st.selectbox("tipo_obra_programa", TIPOS_OBRA_PROGRAMA, index=TIPOS_OBRA_PROGRAMA.index(tipo_default) if tipo_default in TIPOS_OBRA_PROGRAMA else 0)
+                        modalidad = st.selectbox("modalidad_ejecucion", MODALIDADES_EJECUCION, index=MODALIDADES_EJECUCION.index("Cuadrilla HAVITA") if "Cuadrilla HAVITA" in MODALIDADES_EJECUCION else 0)
+                    with c2:
+                        estado = st.selectbox("estado_obra", ESTADOS_OBRA, index=0)
+                        responsable = st.selectbox("responsable_tecnico", RESPONSABLES_TECNICOS, index=0)
+                    descripcion = st.text_area("descripcion_obra", value=f"Obra generada desde tablero por validacion de demanda #{d.get('id_demanda')}.", height=80)
+                    crear = st.form_submit_button("Validar y crear obra", type="primary", use_container_width=True)
+
+                if crear:
+                    if d.get("id_demanda") in ids:
+                        st.warning("Esta demanda ya tiene una obra creada.")
+                    else:
+                        payload = {
+                            "id_demanda": d.get("id_demanda"),
+                            "tipo_obra_programa": tipo,
+                            "modalidad_ejecucion": modalidad,
+                            "estado_obra": estado,
+                            "responsable_tecnico": responsable,
+                            "descripcion_obra": clean(descripcion) or None,
+                            "obs_obras": f"|| {date.today().strftime('%d/%m/%y')} - Obra creada desde tablero por validacion de demanda.",
+                            "fecha_creacion": date.today().isoformat(),
+                        }
+                        try:
+                            crear_obra(payload)
+                        except Exception as e:
+                            show_error(e)
+                        else:
+                            st.success("Obra creada correctamente.")
+                            st.rerun()
+
+
+def editar_obra_tab():
+    st.subheader("Editar obra")
+    obras = listar_obras_con_demanda()
+    q = st.text_input("Busqueda libre", placeholder="id_obra, expediente, apellido, nombre o barrio")
+    qn = normalizar(q)
+    filtradas = [o for o in obras if not qn or any(qn in normalizar(o.get(c)) for c in ["id_obra", "expediente", "apellido", "nombre", "barrio"])]
+    st.caption(f"Obras encontradas: {len(filtradas)}")
+    for o in sorted(filtradas, key=lambda x: x.get("id_obra") or 0, reverse=True):
+        with st.container(border=True):
+            st.markdown(f"**Obra #{txt(o.get('id_obra'))}** | {txt(o.get('apellido'))}, {txt(o.get('nombre'))} | Expte {txt(o.get('expediente')) or '-'}")
+            if st.button("Editar", key=f"e_{o.get('id_obra')}"):
+                st.session_state["obra_edit_sel"] = o.get("id_obra")
+                st.rerun()
+    oid = st.session_state.get("obra_edit_sel")
+    if not oid:
+        return
+    obra = obtener_obra_con_demanda(oid)
+    if not obra:
+        return
+    st.divider()
+    st.markdown(f"### Obra N° {oid}")
+    with st.form(f"form_editar_obra_{oid}"):
+        c1, c2 = st.columns(2)
+        with c1:
+            tipo = st.selectbox(
+                "tipo_obra_programa",
+                TIPOS_OBRA_PROGRAMA,
+                index=TIPOS_OBRA_PROGRAMA.index(obra.get("tipo_obra_programa")) if obra.get("tipo_obra_programa") in TIPOS_OBRA_PROGRAMA else 0,
+            )
+            estado = st.selectbox(
+                "estado_obra",
+                ESTADOS_OBRA,
+                index=ESTADOS_OBRA.index(obra.get("estado_obra")) if obra.get("estado_obra") in ESTADOS_OBRA else 0,
+            )
+            fecha_acta_in = st.text_input("fecha_acta", value=clean(obra.get("fecha_acta")))
+        with c2:
+            modalidad = st.selectbox(
+                "modalidad_ejecucion",
+                MODALIDADES_EJECUCION,
+                index=MODALIDADES_EJECUCION.index(obra.get("modalidad_ejecucion")) if obra.get("modalidad_ejecucion") in MODALIDADES_EJECUCION else 0,
+            )
+            idx_resp = RESPONSABLES_TECNICOS.index(obra.get("responsable_tecnico")) if obra.get("responsable_tecnico") in RESPONSABLES_TECNICOS else 0
+            resp = st.selectbox("responsable_tecnico", RESPONSABLES_TECNICOS, index=idx_resp)
+            fecha_inicio_in = st.text_input("fecha_inicio", value=clean(obra.get("fecha_inicio")))
+        fecha_ejecutada_in = st.text_input("fecha_ejecutada", value=clean(obra.get("fecha_ejecutada")))
+        descripcion = st.text_area("descripcion_obra", value=txt(obra.get("descripcion_obra")), height=90)
+        obs = st.text_area("obs_obras", value=txt(obra.get("obs_obras")), height=90)
+        b1, b2 = st.columns(2)
+        guardar = b1.form_submit_button("Guardar cambios de obra", type="primary", use_container_width=True)
+        cancelar = b2.form_submit_button("Cancelar edicion", use_container_width=True)
+
+    if cancelar:
+        st.session_state.pop("obra_edit_sel", None)
+        st.rerun()
+
+    if guardar:
+        fa = parse_fecha_input(fecha_acta_in)
+        fi = parse_fecha_input(fecha_inicio_in)
+        fe = parse_fecha_input(fecha_ejecutada_in)
+        if "__INVALID__" in {fa, fi, fe}:
+            st.warning("Formato de fecha invalido. Usa YYYY-MM-DD o DD/MM/AA.")
+            return
+
+        payload = {}
+        cambios = []
+        comparables = {
+            "tipo_obra_programa": (clean(obra.get("tipo_obra_programa")), clean(tipo), "Tipo"),
+            "modalidad_ejecucion": (clean(obra.get("modalidad_ejecucion")), clean(modalidad), "Modalidad"),
+            "estado_obra": (clean(obra.get("estado_obra")), clean(estado), "Estado"),
+            "responsable_tecnico": (clean(obra.get("responsable_tecnico")), clean(resp), "Responsable"),
+            "descripcion_obra": (clean(obra.get("descripcion_obra")), clean(descripcion), "Descripcion"),
+            "obs_obras": (clean(obra.get("obs_obras")), clean(obs), "Obs"),
+            "fecha_acta": (clean(obra.get("fecha_acta")), clean(fa), "fecha_acta"),
+            "fecha_inicio": (clean(obra.get("fecha_inicio")), clean(fi), "fecha_inicio"),
+            "fecha_ejecutada": (clean(obra.get("fecha_ejecutada")), clean(fe), "fecha_ejecutada"),
+        }
+        for k, (old, new, label) in comparables.items():
+            if old != new:
+                payload[k] = new or None
+                cambios.append(f"{label}: {old or '-'} -> {new or '-'}")
+
+        auto = []
+        hoy = date.today().isoformat()
+        if estado == "Acta firmada" and not clean(payload.get("fecha_acta", obra.get("fecha_acta"))):
+            payload["fecha_acta"] = hoy
+            auto.append("fecha_acta registrada automaticamente")
+        if estado == "En ejecucion" and not clean(payload.get("fecha_inicio", obra.get("fecha_inicio"))):
+            payload["fecha_inicio"] = hoy
+            auto.append("fecha_inicio registrada automaticamente")
+        if estado == "Ejecutada" and not clean(payload.get("fecha_ejecutada", obra.get("fecha_ejecutada"))):
+            payload["fecha_ejecutada"] = hoy
+            auto.append("fecha_ejecutada registrada automaticamente")
+
+        if not payload and not auto:
+            st.info("No hay cambios para guardar.")
+        else:
+            msg = f"Actualizacion de obra. Cambios: {'; '.join(cambios) if cambios else 'sin cambios manuales'}"
+            if auto:
+                msg = f"{msg}; {'; '.join(auto)}"
+            payload["historial_mensaje"] = msg
+            try:
+                actualizar_obra_servicio(oid, payload)
+            except Exception as e:
+                show_error(e)
+                return
+            st.success("Campos de obra actualizados.")
+            st.session_state.pop("obra_edit_sel", None)
+            st.rerun()
+
+    render_tareas_obra(obra)
+
+
+def seguimiento_tecnico_tab():
+    st.subheader("Gestion de Obras")
+    st.caption("Buscar, seleccionar y actualizar obras en ejecucion.")
+
+    try:
+        obras = listar_obras_con_demanda()
+    except Exception as e:
+        show_error(e)
+        return
+    if not obras:
+        st.info("No hay obras cargadas.")
+        return
+
+    if "go_filtros" not in st.session_state:
+        st.session_state["go_filtros"] = {"q": "", "estado": "Todos", "responsable": "Todos", "prioridad": "Todas"}
+
+    estados_opts = ["Todos"] + sorted({clean(o.get("estado_obra")) for o in obras if clean(o.get("estado_obra"))})
+    resp_opts = ["Todos"] + sorted({clean(o.get("responsable_tecnico")) for o in obras if clean(o.get("responsable_tecnico"))})
+    prio_opts = ["Todas"] + sorted({clean(o.get("prioridad")) for o in obras if clean(o.get("prioridad"))})
+
+    with st.container(border=True):
+        with st.form("go_filtros_form"):
+            c1, c2, c3, c4 = st.columns([3, 1.2, 1.2, 1.2])
+            with c1:
+                q_in = st.text_input(
+                    "Buscar obra",
+                    value=st.session_state["go_filtros"]["q"],
+                    placeholder="apellido, nombre, DNI, expediente, barrio, domicilio, id_obra, id_demanda",
+                )
+            with c2:
+                est_idx = estados_opts.index(st.session_state["go_filtros"]["estado"]) if st.session_state["go_filtros"]["estado"] in estados_opts else 0
+                estado_in = st.selectbox("Estado", estados_opts, index=est_idx)
+            with c3:
+                resp_idx = resp_opts.index(st.session_state["go_filtros"]["responsable"]) if st.session_state["go_filtros"]["responsable"] in resp_opts else 0
+                resp_in = st.selectbox("Responsable", resp_opts, index=resp_idx)
+            with c4:
+                prio_idx = prio_opts.index(st.session_state["go_filtros"]["prioridad"]) if st.session_state["go_filtros"]["prioridad"] in prio_opts else 0
+                prio_in = st.selectbox("Prioridad", prio_opts, index=prio_idx)
+            aplicar = st.form_submit_button("Aplicar filtros", type="primary", use_container_width=True)
+
+        if aplicar:
+            st.session_state["go_filtros"] = {"q": q_in, "estado": estado_in, "responsable": resp_in, "prioridad": prio_in}
+
+        qn = normalizar(st.session_state["go_filtros"]["q"])
+        filtradas = []
+        for o in obras:
+            if st.session_state["go_filtros"]["estado"] != "Todos" and clean(o.get("estado_obra")) != st.session_state["go_filtros"]["estado"]:
+                continue
+            if st.session_state["go_filtros"]["responsable"] != "Todos" and clean(o.get("responsable_tecnico")) != st.session_state["go_filtros"]["responsable"]:
+                continue
+            if st.session_state["go_filtros"]["prioridad"] != "Todas" and clean(o.get("prioridad")) != st.session_state["go_filtros"]["prioridad"]:
+                continue
+            if qn and not any(qn in normalizar(o.get(c)) for c in ["id_obra", "id_demanda", "expediente", "apellido", "nombre", "dni", "barrio", "domicilio"]):
+                continue
+            filtradas.append(o)
+
+        opciones = {
+            f"Obra {txt(o.get('id_obra'))} | {clean(o.get('apellido'))}, {clean(o.get('nombre'))} | Expte {txt(o.get('expediente')) or '-'}": o
+            for o in filtradas
+        }
+        if not opciones:
+            st.warning("No hay obras que coincidan con los filtros.")
+            return
+        sel = st.selectbox("Seleccionar obra", list(opciones.keys()), key="go_sel")
+        obra = opciones[sel]
+
+    with st.container(border=True):
+        st.markdown(f"**Obra #{txt(obra.get('id_obra'))} | Demanda #{txt(obra.get('id_demanda'))}**")
+        st.caption(
+            f"Expte: {txt(obra.get('expediente')) or '-'} | Beneficiario: {clean(obra.get('apellido'))}, {clean(obra.get('nombre'))} | "
+            f"Domicilio: {(txt(obra.get('domicilio')) or '-')} - {(txt(obra.get('barrio')) or '-')}"
+        )
+        st.caption(
+            f"Contacto: {txt(obra.get('contacto')) or '-'} | Estado: {txt(obra.get('estado_obra')) or '-'} | Responsable: {txt(obra.get('responsable_tecnico')) or '-'} | "
+            f"Prioridad: {txt(obra.get('prioridad')) or '-'} | Inicio: {fecha_corta(obra.get('fecha_inicio'))} | Ultima actualizacion: {fecha_corta(obra.get('ultima_actualizacion_semanal'))}"
         )
 
-    if actualizar:
-        fecha_entrega_iso = parsear_fecha_corta_ddmmaa(fecha_entrega_ingresada)
-        fecha_entrega_actual_iso = limpiar(orden.get("fecha_entrega")) or None
-        fecha_entrega_cambio = fecha_entrega_iso != fecha_entrega_actual_iso
-        estado_cambio = nuevo_estado != estado_actual
+    col_main, col_notas = st.columns([3, 1])
 
-        if nuevo_estado in {"Pedido entrega", "Pedido retiro"}:
-            fecha_entrega_iso = None
-            fecha_entrega_cambio = fecha_entrega_actual_iso is not None
+    with col_main:
+        with st.container(border=True):
+            st.markdown("#### A. Actualizacion de estado de obra")
+            c1, c2 = st.columns([1, 2])
+            with c1:
+                st.text_input("Estado actual", value=txt(obra.get("estado_obra")) or "-", disabled=True, key=f"go_estado_actual_{obra.get('id_obra')}")
+                nuevo_estado = st.selectbox("Nuevo estado", ESTADOS_GESTION_OBRA, key=f"go_new_estado_{obra.get('id_obra')}")
+            with c2:
+                obs_estado = st.text_input("Observacion breve", key=f"go_obs_estado_{obra.get('id_obra')}")
+            if st.button("Actualizar estado", key=f"go_btn_estado_{obra.get('id_obra')}", type="primary"):
+                payload = {"estado_obra": nuevo_estado, "historial_mensaje": f"Cambio de estado desde Gestion de Obras: {txt(obra.get('estado_obra'))} -> {nuevo_estado}"}
+                try:
+                    actualizar_obra_servicio(obra.get("id_obra"), payload)
+                    if agregar_obs_obras_del_dia:
+                        msg = f"Se modifico estado de obra: {txt(obra.get('estado_obra'))} -> {nuevo_estado}"
+                        if clean(obs_estado):
+                            msg = f"{msg}; {clean(obs_estado)}"
+                        agregar_obs_obras_del_dia(obra.get("id_obra"), msg)
+                except Exception as e:
+                    show_error(e)
+                else:
+                    st.success("Estado actualizado.")
+                    st.rerun()
 
-        if estado_cambio and nuevo_estado not in {"Pedido entrega", "Pedido retiro"} and not fecha_entrega_iso:
-            st.warning("Cuando cambia el estado debes cargar la fecha de entrega en formato DD/MM/AA.")
-            return
+        with st.expander("B. Observaciones de obra", expanded=False):
+            obs_texto = st.text_area("Observacion", height=100, key=f"go_obs_{obra.get('id_obra')}")
+            if st.button("Guardar observacion", key=f"go_btn_obs_{obra.get('id_obra')}"):
+                if not clean(obs_texto):
+                    st.warning("Escribe una observacion.")
+                else:
+                    try:
+                        if agregar_obs_obras_del_dia:
+                            agregar_obs_obras_del_dia(obra.get("id_obra"), clean(obs_texto))
+                    except Exception as e:
+                        show_error(e)
+                    else:
+                        st.success("Observacion guardada.")
+                        st.rerun()
 
-        if nuevo_estado not in {"Pedido entrega", "Pedido retiro"} and limpiar(fecha_entrega_ingresada) and not fecha_entrega_iso:
-            st.warning("Fecha invalida. Usa formato DD/MM/AA, por ejemplo 28/05/26.")
-            return
-
-        if not estado_cambio and not limpiar(comentario) and not materiales_nuevos and not fecha_entrega_cambio:
-            st.warning("No hay cambios para actualizar.")
-            return
-        try:
-            if estado_cambio or limpiar(comentario) or fecha_entrega_cambio:
-                actualizar_orden_material(
-                    orden["n_orden"],
-                    nuevo_estado,
-                    comentario,
-                    fecha_entrega=fecha_entrega_iso,
+        with st.expander("C. Listado de tareas de la obra", expanded=False):
+            try:
+                tareas = listar_tareas_por_obra(obra.get("id_obra"))
+            except Exception as e:
+                show_error(e)
+                tareas = []
+            if not tareas:
+                st.info("Esta obra no tiene tareas vinculadas.")
+            else:
+                edit = pd.DataFrame(
+                    [{"id_tarea": t.get("id_tarea"), "descripcion_tarea": txt(t.get("descripcion_tarea")), "cant_tarea": txt(t.get("cant_tarea")), "Ejecutada": bool(t.get("estado_tarea"))} for t in tareas]
                 )
-            if materiales_nuevos:
-                crear_materiales_orden(orden["n_orden"], materiales_nuevos)
-                limpiar_materiales_tmp(f"orden_{orden.get('n_orden')}")
-        except Exception as error:
-            mostrar_error_supabase(error)
-            return
-        st.success("Orden actualizada correctamente.")
-        st.rerun()
+                out = st.data_editor(
+                    edit,
+                    hide_index=True,
+                    use_container_width=True,
+                    column_config={
+                        "id_tarea": st.column_config.NumberColumn(disabled=True),
+                        "descripcion_tarea": st.column_config.TextColumn(disabled=True),
+                        "cant_tarea": st.column_config.TextColumn(disabled=True),
+                        "Ejecutada": st.column_config.CheckboxColumn(),
+                    },
+                    key=f"go_tareas_{obra.get('id_obra')}",
+                )
+                cta1, cta2 = st.columns(2)
+                actualizar = cta1.button("Actualizar tareas", key=f"go_btn_tareas_upd_{obra.get('id_obra')}", type="primary", use_container_width=True)
+                cancelar = cta2.button("Cancelar cambios", key=f"go_btn_tareas_cancel_{obra.get('id_obra')}", use_container_width=True)
+                if cancelar:
+                    st.rerun()
+                if actualizar:
+                    cambios_txt = []
+                    mapa = {t.get("id_tarea"): t for t in tareas}
+                    try:
+                        for _, row in out.iterrows():
+                            tid = int(row["id_tarea"])
+                            previo = bool(mapa[tid].get("estado_tarea"))
+                            nuevo = bool(row["Ejecutada"])
+                            if previo != nuevo:
+                                actualizar_tarea_cantidad_estado(tid, mapa[tid].get("cant_tarea"), nuevo)
+                                cambios_txt.append(
+                                    f"Se modifico tarea: {clean(mapa[tid].get('descripcion_tarea'))}, estado {'Ejecutada' if previo else 'Pendiente'} -> {'Ejecutada' if nuevo else 'Pendiente'}"
+                                )
+                        if cambios_txt and agregar_obs_obras_del_dia:
+                            for c in cambios_txt:
+                                agregar_obs_obras_del_dia(obra.get("id_obra"), c)
+                    except Exception as e:
+                        show_error(e)
+                    else:
+                        st.success("Tareas actualizadas.")
+                        st.rerun()
 
-    if eliminar:
+        with st.expander("D. Generar orden", expanded=False):
+            with st.form(f"go_form_orden_{obra.get('id_obra')}"):
+                tipo = st.selectbox("Tipo de orden", ["Pendiente de retiro", "Pendiente de entrega"])
+                autoriza = st.text_input("Quien autoriza (opcional)")
+                instrucciones = st.text_area(
+                    "Instrucciones",
+                    value=f"Orden creada desde Gestion de obra desde obra {obra.get('id_obra')}.",
+                    height=80,
+                )
+                mats = st.data_editor(
+                    pd.DataFrame([{"Material": "", "cantidad": ""}]),
+                    num_rows="dynamic",
+                    hide_index=True,
+                    use_container_width=True,
+                    key=f"go_mat_orden_{obra.get('id_obra')}",
+                )
+                crear_o = st.form_submit_button("Generar orden", type="primary")
+            if crear_o:
+                estado_orden = "Pendiente de retiro" if tipo == "Pendiente de retiro" else "Pendiente de entrega"
+                try:
+                    nueva = crear_orden_material(
+                        {
+                            "id_demanda": obra.get("id_demanda"),
+                            "origen": clean(autoriza) or obra.get("origen") or "Gestion de Obras",
+                            "estado": estado_orden,
+                            "instrucciones_tarea": clean(instrucciones) or f"Orden creada desde Gestion de obra desde obra {obra.get('id_obra')}.",
+                        }
+                    )
+                    filas = []
+                    for _, r in mats.iterrows():
+                        m = clean(r.get("Material"))
+                        c = clean(r.get("cantidad"))
+                        if m:
+                            filas.append({"Material": m, "cantidad": c})
+                    if nueva and filas:
+                        crear_materiales_orden(nueva.get("n_orden"), filas)
+                    if agregar_obs_obras_del_dia:
+                        agregar_obs_obras_del_dia(obra.get("id_obra"), f"Se genero orden {estado_orden} desde Gestion de Obras")
+                except Exception as e:
+                    show_error(e)
+                else:
+                    st.success("Orden generada.")
+                    st.rerun()
+
+        with st.expander("E. Generar demanda vinculada", expanded=False):
+            with st.form(f"go_form_demanda_{obra.get('id_obra')}"):
+                pedido = st.text_area("Pedido", height=90)
+                accion = st.selectbox("Accion", ["Obra", "Emergencia", "Entregar materiales", "Informe / Actuacion", "Consulta / Seguimiento"])
+                prioridad = st.selectbox("Prioridad", ["1 - Urgente", "2 - Prioritario", "3 - Normal", "4 - Bajo", "5 - En espera"], index=2)
+                responsable = st.selectbox("Responsable", RESPONSABLES_TECNICOS, index=0)
+                crear_d = st.form_submit_button("Generar demanda", type="primary")
+            if crear_d:
+                if not clean(pedido):
+                    st.warning("Completa el pedido.")
+                else:
+                    try:
+                        nueva_demanda = crear_demanda(
+                            {
+                                "fecha_ingreso": date.today().isoformat(),
+                                "origen": "Gestion de Obras",
+                                "prioridad": prioridad,
+                                "expte_numero": obra.get("expte_numero"),
+                                "expte_anio": obra.get("expte_anio"),
+                                "expediente": obra.get("expediente"),
+                                "apellido": obra.get("apellido"),
+                                "nombre": obra.get("nombre"),
+                                "dni": obra.get("dni"),
+                                "domicilio": obra.get("domicilio"),
+                                "barrio": obra.get("barrio"),
+                                "contacto": obra.get("contacto"),
+                                "accion": accion,
+                                "estado": "Ingresada",
+                                "responsable": responsable,
+                                "observaciones": f"Demanda creada desde Gestion de Obras vinculada a obra {obra.get('id_obra')}. Pedido: {clean(pedido)}",
+                            }
+                        )
+                        if agregar_obs_obras_del_dia:
+                            agregar_obs_obras_del_dia(obra.get("id_obra"), f"Se genero demanda vinculada #{nueva_demanda.get('id_demanda') if nueva_demanda else '-'} desde Gestion de Obras")
+                    except Exception as e:
+                        show_error(e)
+                    else:
+                        st.success("Demanda generada.")
+                        st.rerun()
+
+    with col_notas:
+        st.markdown("#### Notas rapidas")
         try:
-            eliminar_materiales_por_orden(orden["n_orden"])
-            eliminar_orden_material(orden["n_orden"])
-        except Exception as error:
-            mostrar_error_supabase(error)
-            return
-        st.success("Orden eliminada correctamente.")
-        st.rerun()
-
-
-def ordenes_section():
-    tab_nueva, tab_seguimiento = st.tabs(["Nueva orden", "Seguimiento de ordenes"])
-    with tab_nueva:
-        nueva_orden_tab()
-    with tab_seguimiento:
-        seguimiento_ordenes_tab()
+            notas = listar_notas_rapidas(estado="Pendiente", id_obra=obra.get("id_obra"))
+        except Exception as e:
+            show_error(e)
+            notas = []
+        if not notas:
+            st.caption("Sin notas pendientes.")
+        for n in notas:
+            with st.container(border=True):
+                st.caption(f"{fecha_corta(n.get('fecha_nota'))} | {txt(n.get('responsable_tecnico')) or '-'}")
+                st.write(txt(n.get("nota")))
+                a1, a2 = st.columns(2)
+                if a1.button("✓", key=f"nota_ap_{n.get('id_nota')}", help="Aplicar"):
+                    st.session_state["nota_aplicar_id"] = n.get("id_nota")
+                if a2.button("✕", key=f"nota_desc_{n.get('id_nota')}", help="Descartar"):
+                    try:
+                        actualizar_nota_rapida(n.get("id_nota"), {"estado_nota": "Descartada", "observacion_revision": "Descartada desde Gestion de Obras"})
+                    except Exception as e:
+                        show_error(e)
+                    else:
+                        st.success("Nota descartada.")
+                        st.rerun()
+        nota_aplicar_id = st.session_state.get("nota_aplicar_id")
+        if nota_aplicar_id:
+            nota_sel = next((x for x in notas if x.get("id_nota") == nota_aplicar_id), None)
+            if nota_sel:
+                st.divider()
+                st.caption("Aplicar nota")
+                accion_nota = st.selectbox(
+                    "Convertir en",
+                    ["Observacion de obra", "Cambio de estado", "Actualizar tarea", "Generar orden", "Generar demanda"],
+                    key="go_accion_nota",
+                )
+                if st.button("Confirmar aplicacion", key="go_btn_apply_nota", type="primary"):
+                    try:
+                        if accion_nota == "Observacion de obra" and agregar_obs_obras_del_dia:
+                            agregar_obs_obras_del_dia(obra.get("id_obra"), clean(nota_sel.get("nota")))
+                        actualizar_nota_rapida(
+                            nota_sel.get("id_nota"),
+                            {
+                                "estado_nota": "Aplicada",
+                                "revisada_por": "Gestion de Obras",
+                                "revisada_at": datetime.now().isoformat(),
+                                "observacion_revision": f"Aplicada como: {accion_nota}",
+                            },
+                        )
+                    except Exception as e:
+                        show_error(e)
+                    else:
+                        st.success("Nota aplicada.")
+                        st.session_state.pop("nota_aplicar_id", None)
+                        st.rerun()
 
 
 st.set_page_config(page_title="Obras", layout="wide")
 st.title("Obras")
-
-seccion = st.tabs(["Ordenes"])
-with seccion[0]:
-    ordenes_section()
-
-
+t1, t2, t3 = st.tabs(["Tablero", "Editar obra", "Gestion de Obras"])
+with t1:
+    tablero_tab()
+with t2:
+    editar_obra_tab()
+with t3:
+    seguimiento_tecnico_tab()
