@@ -17,6 +17,11 @@ def generar_password_hash(password):
 
 
 def verificar_password(password, password_hash):
+    password_texto = password or ""
+    password_hash_texto = password_hash or ""
+    if password_hash_texto == password_texto:
+        return True
+
     password = (password or "").encode("utf-8")
     partes = (password_hash or "").split("$")
     if len(partes) != 4 or partes[0] != HASH_PREFIX:
@@ -39,6 +44,17 @@ def obtener_usuario_login(usuario):
         supabase.table("usuarios_app")
         .select("id_usuario,usuario,password_hash,equipo,rol,activo")
         .eq("usuario", usuario)
+        .eq("activo", True)
+        .limit(1)
+        .execute()
+    )
+    if response.data:
+        return response.data[0]
+
+    response = (
+        supabase.table("usuarios_app")
+        .select("id_usuario,usuario,password_hash,equipo,rol,activo")
+        .ilike("usuario", usuario)
         .eq("activo", True)
         .limit(1)
         .execute()
