@@ -29,7 +29,9 @@ def aplicar_estilos_globales():
         }
 
         .stApp {
-            background: var(--app-bg);
+            background-image: linear-gradient(rgba(243, 247, 246, 0.95 ), rgba(243, 247, 246, 0.80)), url("https://iwrjlwjyokkjzgnyzclj.supabase.co/storage/v1/object/public/SIGAH/ChatGPT%20Image%201%20jun%202026,%2011_37_20%20p.m..png");
+            background-attachment: fixed;
+            background-size: cover;
             color: var(--text-main);
         }
 

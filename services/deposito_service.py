@@ -187,6 +187,16 @@ def _materiales_faltantes(materiales, seleccionados_idx):
     return faltantes
 
 
+def _limpiar_materiales_faltantes(materiales_faltantes):
+    resultado = []
+    for material in materiales_faltantes or []:
+        nombre = _limpiar(material.get("Material"))
+        cantidad = _limpiar(material.get("cantidad"))
+        if nombre and cantidad not in {"", "0", "0.0"}:
+            resultado.append({"Material": nombre, "cantidad": cantidad})
+    return resultado
+
+
 def programar_ordenes_deposito(ids_ordenes, fecha_entrega):
     if not ids_ordenes:
         return []
@@ -274,7 +284,12 @@ def _crear_orden_por_parcialidad(
     return nueva
 
 
-def marcar_entregado_desde_programados(n_orden, parcial=False, materiales_seleccionados_idx=None):
+def marcar_entregado_desde_programados(
+    n_orden,
+    parcial=False,
+    materiales_seleccionados_idx=None,
+    materiales_faltantes=None,
+):
     orden = obtener_orden_deposito(n_orden)
     if not orden:
         return None, None
@@ -309,7 +324,9 @@ def marcar_entregado_desde_programados(n_orden, parcial=False, materiales_selecc
                 "historial": agregar_historial(orden.get("historial"), mensaje),
             },
         )
-        faltantes = _materiales_faltantes(orden.get("materiales") or [], materiales_seleccionados_idx or [])
+        faltantes = _limpiar_materiales_faltantes(materiales_faltantes)
+        if not faltantes and materiales_seleccionados_idx:
+            faltantes = _materiales_faltantes(orden.get("materiales") or [], materiales_seleccionados_idx)
         nueva = _crear_orden_por_parcialidad(
             orden,
             "Pedido entrega",
@@ -322,7 +339,7 @@ def marcar_entregado_desde_programados(n_orden, parcial=False, materiales_selecc
                 "Cargar o verificar materiales faltantes."
             ),
             materiales_faltantes=faltantes,
-            agregar_nota_manual=not bool(materiales_seleccionados_idx),
+            agregar_nota_manual=not bool(faltantes),
         )
         return actualizada, nueva
 
@@ -353,7 +370,9 @@ def marcar_entregado_desde_programados(n_orden, parcial=False, materiales_selecc
                 "historial": agregar_historial(orden.get("historial"), mensaje),
             },
         )
-        faltantes = _materiales_faltantes(orden.get("materiales") or [], materiales_seleccionados_idx or [])
+        faltantes = _limpiar_materiales_faltantes(materiales_faltantes)
+        if not faltantes and materiales_seleccionados_idx:
+            faltantes = _materiales_faltantes(orden.get("materiales") or [], materiales_seleccionados_idx)
         nueva = _crear_orden_por_parcialidad(
             orden,
             "Pedido retiro",
@@ -366,14 +385,19 @@ def marcar_entregado_desde_programados(n_orden, parcial=False, materiales_selecc
                 "Cargar o verificar materiales faltantes para nuevo retiro."
             ),
             materiales_faltantes=faltantes,
-            agregar_nota_manual=not bool(materiales_seleccionados_idx),
+            agregar_nota_manual=not bool(faltantes),
         )
         return actualizada, nueva
 
     return None, None
 
 
-def marcar_a_deposito_desde_programados(n_orden, parcial=False, materiales_seleccionados_idx=None):
+def marcar_a_deposito_desde_programados(
+    n_orden,
+    parcial=False,
+    materiales_seleccionados_idx=None,
+    materiales_faltantes=None,
+):
     orden = obtener_orden_deposito(n_orden)
     if not orden:
         return None, None
@@ -409,6 +433,9 @@ def marcar_a_deposito_desde_programados(n_orden, parcial=False, materiales_selec
             "historial": agregar_historial(orden.get("historial"), mensaje),
         },
     )
+    faltantes = _limpiar_materiales_faltantes(materiales_faltantes)
+    if not faltantes and materiales_seleccionados_idx:
+        faltantes = _materiales_faltantes(orden.get("materiales") or [], materiales_seleccionados_idx)
     nueva = _crear_orden_por_parcialidad(
         orden,
         "Pedido retiro",
@@ -420,8 +447,8 @@ def marcar_a_deposito_desde_programados(n_orden, parcial=False, materiales_selec
             f"Orden generada automaticamente por retiro parcial a deposito de la Orden N° {n_original}. "
             "Cargar manualmente materiales faltantes para nuevo retiro."
         ),
-        materiales_faltantes=_materiales_faltantes(orden.get("materiales") or [], materiales_seleccionados_idx or []),
-        agregar_nota_manual=not bool(materiales_seleccionados_idx),
+        materiales_faltantes=faltantes,
+        agregar_nota_manual=not bool(faltantes),
     )
     return actualizada, nueva
 

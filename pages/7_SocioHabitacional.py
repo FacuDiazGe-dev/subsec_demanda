@@ -2,6 +2,7 @@ from datetime import date
 
 import streamlit as st
 
+from utils.auth import require_login
 from services.sociohabitacional_service import (
     actualizar_estado_demanda_social,
     contar_indicadores_visitas,
@@ -261,7 +262,7 @@ def render_tablero_principal():
 
 
 def main():
-    st.set_page_config(page_title="SocioHabitacional", layout="wide")
+    require_login(["admin", "tecnico"])
     st.title("SocioHabitacional")
     st.markdown("Tablero operativo de demandas sociohabitacionales y seguimiento de informes.")
     t1, t2 = st.tabs(["Tablero Operativo", "Seguimiento Socio Habitacional"])

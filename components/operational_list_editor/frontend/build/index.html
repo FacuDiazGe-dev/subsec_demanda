@@ -1,0 +1,707 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OperationalListEditor</title>
+    <style>
+      :root {
+        --text-main: #1e293b;
+        --text-secondary: #64748b;
+        --border: #e2e8f0;
+        --bg: #ffffff;
+        --bg-soft: #f8fafc;
+        --green: #006b68;
+        --green-dark: #004f4c;
+        --red: #dc2626;
+      }
+      body {
+        margin: 0;
+        font-family: Inter, Roboto, Arial, sans-serif;
+        color: var(--text-main);
+        background: transparent;
+        overflow: hidden;
+      }
+      html,
+      #root {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+      }
+      .ole-wrap {
+        box-sizing: border-box;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: var(--bg);
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+        padding: 12px;
+      }
+      .ole-wrap.ole-embedded {
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        padding: 0;
+      }
+      .ole-wrap.ole-embedded .ole-header {
+        margin-bottom: 7px;
+      }
+      .ole-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+      .ole-title {
+        font-size: 16px;
+        font-weight: 800;
+        margin: 0;
+      }
+      .ole-help {
+        margin-top: 3px;
+        color: var(--text-secondary);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+      .ole-badge {
+        border: 1px solid #99f6e4;
+        color: var(--green-dark);
+        background: #ecfdf5;
+        border-radius: 999px;
+        padding: 4px 9px;
+        font-size: 12px;
+        font-weight: 750;
+        white-space: nowrap;
+      }
+      .ole-row {
+        display: grid;
+        grid-template-columns: 2fr 0.9fr 0.85fr 34px;
+        gap: 8px;
+        align-items: center;
+        padding: 5px 0;
+      }
+      .ole-row > div,
+      .ole-table-head > div {
+        min-width: 0;
+      }
+      .ole-table-head {
+        display: grid;
+        grid-template-columns: 2fr 0.9fr 0.85fr 34px;
+        gap: 8px;
+        border-top: 1px solid var(--border);
+        padding-top: 9px;
+        margin-top: 9px;
+        color: var(--text-secondary);
+        font-size: 11px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+      .ole-table-head > div {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .ole-rows {
+        margin-top: 3px;
+      }
+      .ole-label {
+        display: none;
+        color: var(--text-secondary);
+        font-size: 11px;
+        font-weight: 750;
+        text-transform: uppercase;
+        margin-bottom: 3px;
+      }
+      .ole-input,
+      .ole-select {
+        box-sizing: border-box;
+        width: 100%;
+        min-height: 36px;
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        background: #fff;
+        color: var(--text-main);
+        padding: 7px 9px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .ole-input[readonly] {
+        background: var(--bg-soft);
+        color: var(--text-secondary);
+      }
+      .ole-readonly-cell {
+        box-sizing: border-box;
+        width: 100%;
+        min-height: 36px;
+        display: flex;
+        align-items: center;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        background: var(--bg-soft);
+        color: var(--text-main);
+        padding: 7px 9px;
+        font-size: 13px;
+        font-weight: 700;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .ole-readonly-cell.muted {
+        color: var(--text-secondary);
+        font-weight: 650;
+      }
+      .ole-mode-partial {
+        overflow-x: auto;
+      }
+      .ole-mode-partial .ole-rows {
+        max-height: 340px;
+        overflow-y: auto;
+        padding-right: 4px;
+      }
+      .ole-mode-partial .ole-rows::-webkit-scrollbar {
+        width: 7px;
+      }
+      .ole-mode-partial .ole-rows::-webkit-scrollbar-track {
+        background: #f1f5f9;
+        border-radius: 999px;
+      }
+      .ole-mode-partial .ole-rows::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 999px;
+      }
+      .ole-mode-partial .ole-table-head,
+      .ole-mode-partial .ole-row {
+        min-width: 360px;
+        gap: 6px;
+      }
+      .ole-mode-partial .ole-row {
+        padding: 4px 0;
+      }
+      .ole-mode-partial .ole-readonly-cell,
+      .ole-mode-partial .ole-input {
+        min-height: 32px;
+        height: 32px;
+        border-radius: 9px;
+        padding: 5px 7px;
+        font-size: 12.5px;
+      }
+      .ole-mode-partial .ole-readonly-cell.muted,
+      .ole-mode-partial .ole-input.delivered {
+        justify-content: center;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+      }
+      .ole-mode-partial .ole-input.delivered {
+        width: 100%;
+        min-width: 0;
+      }
+      .ole-mode-read .ole-rows {
+        max-height: 300px;
+        overflow-y: auto;
+        padding-right: 4px;
+      }
+      .ole-mode-read .ole-rows::-webkit-scrollbar {
+        width: 7px;
+      }
+      .ole-mode-read .ole-rows::-webkit-scrollbar-track {
+        background: #f1f5f9;
+        border-radius: 999px;
+      }
+      .ole-mode-read .ole-rows::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 999px;
+      }
+      .ole-warning {
+        margin-top: 9px;
+        border: 1px solid #fed7aa;
+        background: #fff7ed;
+        color: #9a3412;
+        border-radius: 10px;
+        padding: 8px 10px;
+        font-size: 12px;
+        font-weight: 750;
+      }
+      .ole-btn {
+        min-height: 36px;
+        border-radius: 10px;
+        border: 1px solid #cbd5e1;
+        background: #fff;
+        color: var(--text-main);
+        font-size: 13px;
+        font-weight: 750;
+        cursor: pointer;
+      }
+      .ole-btn-primary {
+        background: var(--green);
+        border-color: var(--green);
+        color: #fff;
+      }
+      .ole-btn-primary:hover {
+        background: var(--green-dark);
+      }
+      .ole-btn-danger {
+        color: var(--red);
+        border-color: #fecaca;
+        background: #fff5f5;
+      }
+      .ole-check {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        min-height: 34px;
+        border: 1px solid #cbd5e1;
+        border-radius: 999px;
+        background: #fff;
+        color: var(--text-secondary);
+        font-size: 12px;
+        font-weight: 800;
+        cursor: pointer;
+        user-select: none;
+      }
+      .ole-check input {
+        width: 15px;
+        height: 15px;
+        accent-color: var(--green);
+      }
+      .ole-check.active {
+        background: #ecfdf5;
+        border-color: #99f6e4;
+        color: var(--green-dark);
+      }
+      .ole-row.deleted {
+        opacity: 0.58;
+        background: #fff7f7;
+        border-radius: 10px;
+      }
+      .ole-actions {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+        margin-top: 12px;
+      }
+      .ole-actions .ole-btn {
+        padding: 0 12px;
+      }
+      .ole-empty {
+        border-top: 1px dashed #cbd5e1;
+        margin-top: 10px;
+        padding-top: 10px;
+        color: var(--text-secondary);
+        font-size: 13px;
+        font-weight: 650;
+      }
+      @media (max-width: 680px) {
+        .ole-table-head {
+          display: none;
+        }
+        .ole-row {
+          grid-template-columns: 1fr 0.72fr 0.72fr 32px;
+          border-top: 1px solid var(--border);
+          padding-top: 7px;
+          margin-top: 7px;
+          align-items: center;
+          gap: 6px;
+        }
+        .ole-label {
+          display: none;
+        }
+        .ole-input,
+        .ole-select {
+          min-height: 34px;
+          border-radius: 9px;
+          padding: 6px 7px;
+          font-size: 12px;
+        }
+        .ole-btn {
+          min-height: 34px;
+          border-radius: 9px;
+          font-size: 12px;
+        }
+        .ole-actions {
+          flex-direction: column;
+        }
+        .ole-btn {
+          width: 100%;
+        }
+        .ole-check {
+          min-height: 32px;
+          font-size: 11px;
+        }
+        .ole-mode-partial .ole-rows {
+          max-height: 280px;
+        }
+        .ole-mode-read .ole-rows {
+          max-height: 260px;
+        }
+      }
+      @media (max-width: 420px) {
+        .ole-row {
+          grid-template-columns: 1fr 64px 64px 30px;
+        }
+        .ole-wrap {
+          padding: 10px;
+        }
+        .ole-title {
+          font-size: 15px;
+        }
+        .ole-help {
+          font-size: 11.5px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      const root = document.getElementById("root");
+      const MSG = {
+        COMPONENT_READY: "streamlit:componentReady",
+        SET_COMPONENT_VALUE: "streamlit:setComponentValue",
+        SET_FRAME_HEIGHT: "streamlit:setFrameHeight",
+        RENDER: "streamlit:render",
+      };
+      let props = {};
+      let rows = [];
+      let eventSeq = 0;
+      let isDirty = false;
+      let initialized = false;
+      let lastRowsSignature = "";
+
+      const esc = (v) =>
+        String(v ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;");
+
+      function send(type, data = {}) {
+        window.parent.postMessage({ isStreamlitMessage: true, type, ...data }, "*");
+      }
+
+      function setReady() {
+        send(MSG.COMPONENT_READY, { apiVersion: 1 });
+      }
+
+      function setHeight() {
+        const el = document.getElementById("oleRoot");
+        const h = el ? Math.ceil(el.getBoundingClientRect().height) : 120;
+        send(MSG.SET_FRAME_HEIGHT, { height: h });
+      }
+
+      function value(action) {
+        const mode = ["build", "progress", "partial", "read"].includes(props.mode) ? props.mode : "build";
+        const outgoingRows = mode === "partial" ? withComputedRows() : rows.map((r) => ({ ...r }));
+        const allComplete = mode === "partial" && outgoingRows.length > 0 && outgoingRows.every((r) => num(r.quantity) > 0 && num(r.pending) === 0);
+        const noneLoaded = mode === "partial" && outgoingRows.length > 0 && outgoingRows.every((r) => num(r.delivered) === 0);
+        return {
+          action,
+          event_id: `${Date.now()}_${eventSeq++}`,
+          rows: outgoingRows,
+          warnings: {
+            all_complete: allComplete,
+            none_loaded: noneLoaded,
+          },
+        };
+      }
+
+      function setValue(action) {
+        send(MSG.SET_COMPONENT_VALUE, { value: value(action), dataType: "json" });
+      }
+
+      function catalogOptions(selected) {
+        const catalog = Array.isArray(props.catalog) ? props.catalog : [];
+        return catalog
+          .map((item) => {
+            const label = esc(item.label || item.material || "");
+            const id = esc(item.id || item.label || item.material || "");
+            const unit = esc(item.unit || item.unidad || "");
+            const sel = String(selected || "") === String(id) ? "selected" : "";
+            return `<option value="${id}" data-unit="${unit}" ${sel}>${label}</option>`;
+          })
+          .join("");
+      }
+
+      function normalizeRows(inputRows) {
+        return (Array.isArray(inputRows) ? inputRows : []).map((row, idx) => ({
+          id: row.id || `tmp_${idx}_${Date.now()}`,
+          item_id: row.item_id || row.id_material || row.item || "",
+          item_label: row.item_label || row.item || row.Material || "",
+          unit: row.unit || row.unidad || "",
+          quantity: row.quantity ?? row.cantidad ?? "",
+          delivered: row.delivered ?? row.entregado ?? row.cantidad_entregada ?? "",
+          status: !!(row.status ?? row.estado_tarea ?? false),
+          deleted: !!(row.deleted ?? row.Eliminar ?? false),
+        }));
+      }
+
+      function num(v) {
+        const n = Number(String(v ?? "").replace(",", "."));
+        return Number.isFinite(n) ? n : 0;
+      }
+
+      function fmt(n) {
+        return Number(n || 0).toLocaleString("es-AR", { maximumFractionDigits: 2 });
+      }
+
+      function withComputedRows() {
+        return rows.map((r) => {
+          const quantity = num(r.quantity);
+          const delivered = Math.max(0, Math.min(num(r.delivered), quantity));
+          return {
+            ...r,
+            delivered,
+            pending: Math.max(quantity - delivered, 0),
+          };
+        });
+      }
+
+      function partialWarningHtml(computedRows) {
+        const mode = ["build", "progress", "partial", "read"].includes(props.mode) ? props.mode : "build";
+        const allComplete = mode === "partial" && computedRows.length > 0 && computedRows.every((r) => num(r.quantity) > 0 && num(r.pending) === 0);
+        const noneLoaded = mode === "partial" && computedRows.length > 0 && computedRows.every((r) => num(r.delivered) === 0);
+        if (allComplete) {
+          return `<div class="ole-warning">Todos los materiales figuran completos. Esta operacion equivale a una entrega completa.</div>`;
+        }
+        if (noneLoaded) {
+          return `<div class="ole-warning">No se cargaron cantidades. Se podra generar una nueva orden para revision manual en oficina.</div>`;
+        }
+        return "";
+      }
+
+      function refreshPartialWarnings() {
+        const warningEl = document.getElementById("partialWarnings");
+        if (warningEl) warningEl.innerHTML = partialWarningHtml(withComputedRows());
+      }
+
+      function rowSignature(inputRows) {
+        return JSON.stringify(
+          (inputRows || []).map((row) => ({
+            id: String(row.id || ""),
+            item_id: String(row.item_id || ""),
+            item_label: String(row.item_label || ""),
+            unit: String(row.unit || ""),
+            quantity: String(row.quantity ?? ""),
+            delivered: String(row.delivered ?? ""),
+            status: !!row.status,
+            deleted: !!row.deleted,
+          }))
+        );
+      }
+
+      function render() {
+        const title = esc(props.title || "Lista operativa");
+        const help = esc(props.help_text || "");
+        const addLabel = esc(props.add_label || "Agregar fila");
+        const saveLabel = esc(props.save_label || "Guardar cambios");
+        const itemLabel = esc(props.item_label || "Material");
+        const mode = ["build", "progress", "partial", "read"].includes(props.mode) ? props.mode : "build";
+        const showStatus = mode === "progress" ? true : !!props.show_status;
+        const statusLabel = esc(props.status_label || "Ejecutada");
+        const showUnit = props.show_unit !== false;
+        const allowDelete = mode === "partial" || mode === "progress" || mode === "read" ? false : props.allow_delete !== false;
+        const gridCols = mode === "partial"
+          ? (showUnit ? "minmax(0, 1fr) 64px 58px 76px 58px" : "minmax(0, 1fr) 58px 76px 58px")
+          : mode === "read"
+          ? (showUnit ? "2fr 0.8fr 0.8fr" : "2fr 0.8fr")
+          : showStatus
+          ? (allowDelete ? "2fr 0.75fr 0.75fr 0.8fr 34px" : "2fr 0.75fr 0.75fr 0.8fr")
+          : (allowDelete ? "2fr 0.9fr 0.85fr 34px" : "2fr 0.9fr 0.85fr");
+        const computedRows = withComputedRows();
+
+        root.innerHTML = `
+          <div id="oleRoot" class="ole-wrap ole-mode-${mode} ${props.embedded ? "ole-embedded" : ""}">
+            <div class="ole-header">
+              <div>
+                <h3 class="ole-title">${title}</h3>
+                ${help ? `<div class="ole-help">${help}</div>` : ""}
+              </div>
+              <div class="ole-badge">${rows.length} items</div>
+            </div>
+            ${
+              rows.length
+                ? `<div class="ole-table-head" style="grid-template-columns:${gridCols}">
+                    <div>${itemLabel}</div>
+                    ${showUnit ? `<div>Unidad</div>` : ""}
+                    <div>${mode === "partial" ? "Orig." : "Cantidad"}</div>
+                    ${mode === "partial" ? `<div>Entreg.</div><div>Pend.</div>` : ""}
+                    ${showStatus && mode !== "partial" ? `<div>${statusLabel}</div>` : ""}
+                    ${allowDelete ? `<div></div>` : ""}
+                  </div>`
+                : ""
+            }
+            <div id="rows" class="ole-rows">
+              ${
+                rows.length
+                  ? rows.map((row, idx) => rowHtml(row, idx, gridCols, showStatus, statusLabel, allowDelete, mode)).join("")
+                  : `<div class="ole-empty">Sin items cargados.</div>`
+              }
+            </div>
+            <div id="partialWarnings">${partialWarningHtml(computedRows)}</div>
+            ${mode === "read" ? "" : `
+              <div class="ole-actions">
+                ${mode === "partial" || mode === "progress" ? "" : `<button class="ole-btn" id="addBtn">${addLabel}</button>`}
+                <button class="ole-btn ole-btn-primary" id="saveBtn">${saveLabel}</button>
+              </div>
+            `}
+          </div>
+        `;
+
+        document.querySelectorAll("[data-row]").forEach((rowEl) => {
+          const idx = Number(rowEl.dataset.row);
+          const itemEl = rowEl.querySelector(".item");
+          if (itemEl) itemEl.addEventListener("change", (ev) => {
+            const opt = ev.target.selectedOptions[0];
+            rows[idx].item_id = ev.target.value;
+            rows[idx].item_label = opt ? opt.textContent : "";
+            rows[idx].unit = opt ? opt.dataset.unit || rows[idx].unit || "" : rows[idx].unit || "";
+            isDirty = true;
+            render();
+          });
+          const quantityEl = rowEl.querySelector(".quantity");
+          if (quantityEl) quantityEl.addEventListener("input", (ev) => {
+            rows[idx].quantity = ev.target.value;
+            isDirty = true;
+          });
+          const deliveredEl = rowEl.querySelector(".delivered");
+          if (deliveredEl) deliveredEl.addEventListener("input", (ev) => {
+            const quantity = num(rows[idx].quantity);
+            const delivered = Math.max(0, Math.min(num(ev.target.value), quantity));
+            rows[idx].delivered = delivered;
+            isDirty = true;
+            ev.target.value = delivered;
+            const pendingEl = rowEl.querySelector(".pending-cell");
+            if (pendingEl) pendingEl.textContent = fmt(Math.max(quantity - delivered, 0));
+            refreshPartialWarnings();
+          });
+          const statusEl = rowEl.querySelector(".status");
+          if (statusEl) {
+            statusEl.addEventListener("change", (ev) => {
+              rows[idx].status = !!ev.target.checked;
+              isDirty = true;
+              render();
+            });
+          }
+          const delEl = rowEl.querySelector(".del");
+          if (delEl) {
+            delEl.addEventListener("click", () => {
+              if (props.mark_deleted) {
+                rows[idx].deleted = !rows[idx].deleted;
+              } else {
+                rows.splice(idx, 1);
+              }
+              isDirty = true;
+              render();
+            });
+          }
+        });
+
+        const addBtn = document.getElementById("addBtn");
+        if (addBtn) addBtn.addEventListener("click", () => {
+          const catalog = Array.isArray(props.catalog) ? props.catalog : [];
+          const first = catalog[0] || {};
+          rows.push({
+            id: `tmp_${Date.now()}_${rows.length}`,
+            item_id: first.id || first.label || first.material || "",
+            item_label: first.label || first.material || "",
+            unit: first.unit || first.unidad || "",
+            quantity: "",
+            status: false,
+            deleted: false,
+          });
+          isDirty = true;
+          render();
+        });
+
+        const saveBtn = document.getElementById("saveBtn");
+        if (saveBtn) saveBtn.addEventListener("click", () => {
+          lastRowsSignature = rowSignature(rows);
+          setValue("save");
+        });
+        requestAnimationFrame(setHeight);
+      }
+
+      function rowHtml(row, idx, gridCols, showStatus, statusLabel, allowDelete, mode) {
+        const showUnit = props.show_unit !== false;
+        if (mode === "read") {
+          return `
+            <div class="ole-row" data-row="${idx}" style="grid-template-columns:${gridCols}">
+              <div><label class="ole-label">Material</label><div class="ole-readonly-cell">${esc(row.item_label)}</div></div>
+              ${showUnit ? `<div><label class="ole-label">Unidad</label><div class="ole-readonly-cell muted">${esc(row.unit)}</div></div>` : ""}
+              <div><label class="ole-label">Cantidad</label><div class="ole-readonly-cell muted">${esc(row.quantity)}</div></div>
+            </div>
+          `;
+        }
+        if (mode === "partial") {
+          const quantity = num(row.quantity);
+          const delivered = Math.max(0, Math.min(num(row.delivered), quantity));
+          const pending = Math.max(quantity - delivered, 0);
+          return `
+            <div class="ole-row ole-row-partial ${row.deleted ? "deleted" : ""}" data-row="${idx}" style="grid-template-columns:${gridCols}">
+              <div><label class="ole-label">Material</label><div class="ole-readonly-cell">${esc(row.item_label)}</div></div>
+              ${showUnit ? `<div><label class="ole-label">Unidad</label><div class="ole-readonly-cell muted">${esc(row.unit)}</div></div>` : ""}
+              <div><label class="ole-label">Original</label><div class="ole-readonly-cell muted">${fmt(quantity)}</div></div>
+              <div><label class="ole-label">Entregado</label><input class="ole-input delivered" type="number" min="0" max="${quantity}" step="1" value="${esc(delivered)}" /></div>
+              <div><label class="ole-label">Pendiente</label><div class="ole-readonly-cell muted pending-cell">${fmt(pending)}</div></div>
+            </div>
+          `;
+        }
+        const locked = mode === "progress";
+        return `
+          <div class="ole-row ${row.deleted ? "deleted" : ""}" data-row="${idx}" style="grid-template-columns:${gridCols}">
+            <div>
+              <label class="ole-label">Item</label>
+              ${
+                locked
+                  ? `<div class="ole-readonly-cell">${esc(row.item_label)}</div>`
+                  : `<select class="ole-select item">${catalogOptions(row.item_id)}</select>`
+              }
+            </div>
+            <div>
+              <label class="ole-label">Unidad</label>
+              <div class="ole-readonly-cell muted">${esc(row.unit)}</div>
+            </div>
+            <div>
+              <label class="ole-label">Cantidad</label>
+              ${
+                locked
+                  ? `<div class="ole-readonly-cell muted">${esc(row.quantity)}</div>`
+                  : `<input class="ole-input quantity" type="number" min="0" step="1" value="${esc(row.quantity)}" />`
+              }
+            </div>
+            ${
+              showStatus
+                ? `<label class="ole-check ${row.status ? "active" : ""}">
+                    <input class="status" type="checkbox" ${row.status ? "checked" : ""} />
+                    ${statusLabel}
+                  </label>`
+                : ""
+            }
+            ${allowDelete ? `<button class="ole-btn ole-btn-danger del" title="Quitar">${row.deleted ? "↩" : "-"}</button>` : ""}
+          </div>
+        `;
+      }
+
+      window.addEventListener("message", (event) => {
+        const data = event.data || {};
+        if (data.type === MSG.RENDER) {
+          props = data.args || {};
+          const incomingRows = normalizeRows(props.rows);
+          const incomingSignature = rowSignature(incomingRows);
+          const localSignature = rowSignature(rows);
+          if (!initialized || !isDirty || incomingSignature === localSignature) {
+            rows = incomingRows;
+            lastRowsSignature = incomingSignature;
+            initialized = true;
+            if (incomingSignature === localSignature) {
+              isDirty = false;
+            }
+          }
+          render();
+        }
+      });
+
+      setReady();
+      setHeight();
+    </script>
+  </body>
+</html>

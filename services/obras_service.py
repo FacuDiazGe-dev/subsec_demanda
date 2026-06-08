@@ -96,6 +96,46 @@ def listar_obras_con_demanda():
     return resultado
 
 
+def listar_obras_asistencia():
+    supabase = get_supabase_client()
+    obras = (
+        supabase.table("obras")
+        .select("id_obra,id_demanda,estado_obra,modalidad_ejecucion")
+        .in_("estado_obra", ["En ejecucion", "En Ejecucion", "En ejecución", "En Ejecución"])
+        .in_("modalidad_ejecucion", ["Cuadrilla HAVITA", "Mixta"])
+        .order("id_obra")
+        .execute()
+    ).data or []
+
+    demandas = {}
+    ids = [o.get("id_demanda") for o in obras if o.get("id_demanda") is not None]
+    if ids:
+        demandas_rows = (
+            supabase.table("demandas")
+            .select("id_demanda,expediente,apellido,nombre,domicilio,barrio,contacto")
+            .in_("id_demanda", ids)
+            .execute()
+        ).data or []
+        demandas = {d.get("id_demanda"): d for d in demandas_rows}
+
+    resultado = []
+    for obra in obras:
+        demanda = demandas.get(obra.get("id_demanda"), {})
+        resultado.append(
+            {
+                **obra,
+                "demanda": demanda,
+                "expediente": demanda.get("expediente"),
+                "apellido": demanda.get("apellido"),
+                "nombre": demanda.get("nombre"),
+                "domicilio": demanda.get("domicilio"),
+                "barrio": demanda.get("barrio"),
+                "contacto": demanda.get("contacto"),
+            }
+        )
+    return resultado
+
+
 def obtener_obra_con_demanda(id_obra):
     obras = [o for o in listar_obras_con_demanda() if o.get("id_obra") == id_obra]
     return obras[0] if obras else None

@@ -164,6 +164,49 @@ def actualizar_orden_material(n_orden, estado, comentario, fecha_entrega=None):
     return response.data[0] if response.data else None
 
 
+def actualizar_orden_detalle(n_orden, estado, instrucciones_tarea):
+    orden = obtener_orden_por_id(n_orden)
+    if not orden:
+        return None
+    if orden.get("fecha_cierre") or orden.get("estado") in ESTADOS_CIERRE:
+        raise ValueError("La orden ya esta cerrada y no se puede editar.")
+
+    estado_anterior = orden.get("estado")
+    instrucciones_anteriores = (orden.get("instrucciones_tarea") or "").strip()
+    instrucciones_nuevas = (instrucciones_tarea or "").strip()
+
+    partes = []
+    if estado != estado_anterior:
+        partes.append(f"Estado: {estado_anterior} -> {estado}")
+    if instrucciones_nuevas != instrucciones_anteriores:
+        partes.append("Instruccion actualizada")
+    partes.append("Materiales actualizados")
+
+    cerrar = estado in ESTADOS_CIERRE
+    if cerrar:
+        partes.append("Cierre de orden")
+
+    payload = {
+        "estado": estado,
+        "instrucciones_tarea": instrucciones_nuevas,
+        "historial": agregar_historial(orden.get("historial"), f"{fecha_historial()} - {'; '.join(partes)}"),
+        "updated_at": datetime.now().isoformat(),
+    }
+    if cerrar:
+        payload["fecha_cierre"] = date.today().isoformat()
+    else:
+        payload["fecha_cierre"] = None
+
+    supabase = get_supabase_client()
+    response = (
+        supabase.table("ordenes_materiales")
+        .update(payload)
+        .eq("n_orden", n_orden)
+        .execute()
+    )
+    return response.data[0] if response.data else None
+
+
 def eliminar_orden_material(n_orden):
     supabase = get_supabase_client()
     response = (

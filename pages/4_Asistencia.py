@@ -7,6 +7,7 @@ import streamlit as st
 
 from services.asistencia_service import (
     eliminar_asistencia_jornada,
+    listar_asistencia_por_fecha,
     listar_asistencia_por_obra_fecha,
     listar_ultima_asignacion_por_obra,
     listar_personal_activo,
@@ -16,7 +17,12 @@ from services.asistencia_service import (
     upsert_cant_hs_persona_fecha,
     upsert_asistencia_jornada,
 )
-from services.obras_service import listar_obras_con_demanda
+from services.obras_service import listar_obras_asistencia
+from utils.auth import require_login
+from utils.operational_attendance_board_component import operational_attendance_board
+
+
+SIN_ASIGNACION_ID = 0
 
 
 def texto(v):
@@ -55,7 +61,11 @@ def to_int_safe(v, default=0):
 
 
 def obras_filtradas():
-    obras = listar_obras_con_demanda()
+    try:
+        obras = listar_obras_asistencia()
+    except Exception as exc:
+        st.warning(f"No se pudieron cargar las obras activas. Se muestran solo los bloques fijos. Detalle: {exc}")
+        return []
     modalidades = {"cuadrilla havita", "mixta"}
     salida = []
     for o in obras:
@@ -69,140 +79,312 @@ def etiqueta_obra(o):
     return f"Obra {o.get('id_obra')} | {titular or 'Sin titular'}"
 
 
-def card_asistencia_obra(fecha_jornada, obra):
+def nombre_personal(persona):
+    return f"{texto(persona.get('apellido'))}, {texto(persona.get('nombre'))}".strip(", ")
+
+
+def nombre_personal_con_categoria(persona):
+    nombre = nombre_personal(persona)
+    categoria = limpiar(persona.get("categoria"))
+    return f"{nombre} - {categoria}" if categoria else nombre
+
+
+def asistencia_estado_key(fecha_jornada):
+    return f"asistencia_dia_{fecha_jornada}"
+
+
+def bloque_linea_1(obra):
+    if obra.get("fijo"):
+        return texto(obra.get("titulo"))
+    titular = f"{texto(obra.get('apellido'))} {texto(obra.get('nombre'))}".strip()
+    return f"Expte. {texto(obra.get('expediente')) or '-'} - {titular or 'Sin titular'}"
+
+
+def bloque_linea_2(obra):
+    if obra.get("fijo"):
+        return "Bloque fijo operativo"
+    domicilio = texto(obra.get("domicilio")) or "-"
+    barrio = texto(obra.get("barrio")) or "-"
+    return f"{domicilio} - {barrio}"
+
+
+def bloques_asistencia():
+    obras = obras_filtradas()
+    return obras + [
+        {"id_obra": -101, "titulo": "DD - Deposito / Carga y descarga", "fijo": True},
+        {"id_obra": -102, "titulo": "OE - Obra externa / Otras areas", "fijo": True},
+    ]
+
+
+def inicializar_asistencia_dia(fecha_jornada, bloques):
+    key = asistencia_estado_key(fecha_jornada)
+    if key in st.session_state:
+        return st.session_state[key]
+
+    asignaciones = {}
+    actuales = []
+    try:
+        actuales = listar_asistencia_por_fecha(fecha_jornada)
+    except Exception:
+        actuales = []
+
+    for row in actuales:
+        pid = row.get("id_persona")
+        if pid is None:
+            continue
+        asignaciones[pid] = {
+            "id_obra": row.get("id_obras"),
+            "estado": limpiar(row.get("asistencia")) or "Ausente",
+        }
+
+    for bloque in bloques:
+        if any(a.get("id_obra") == bloque.get("id_obra") for a in asignaciones.values()):
+            continue
+        try:
+            ultimos = listar_ultima_asignacion_por_obra(bloque.get("id_obra"), fecha_jornada)
+        except Exception:
+            ultimos = []
+        for row in ultimos:
+            pid = row.get("id_persona")
+            if pid is None or pid in asignaciones:
+                continue
+            asignaciones[pid] = {"id_obra": bloque.get("id_obra"), "estado": "Sin marcar"}
+
+    st.session_state[key] = asignaciones
+    return asignaciones
+
+
+def asignaciones_para_componente(asignaciones):
+    salida = []
+    for pid, item in asignaciones.items():
+        if item.get("id_obra") is None:
+            continue
+        salida.append(
+            {
+                "person_id": pid,
+                "block_id": item.get("id_obra"),
+                "status": item.get("estado") or "Sin marcar",
+            }
+        )
+    return salida
+
+
+def asignaciones_desde_componente(rows):
+    asignaciones = {}
+    for row in rows or []:
+        try:
+            pid = int(row.get("person_id"))
+            id_obra = int(row.get("block_id"))
+        except Exception:
+            continue
+        asignaciones[pid] = {
+            "id_obra": id_obra,
+            "estado": limpiar(row.get("status")) or "Sin marcar",
+        }
+    return asignaciones
+
+
+def completar_ausentes_default(asignaciones, personal):
+    salida = dict(asignaciones)
+    for persona in personal or []:
+        pid = persona.get("id_personal")
+        if pid is None or pid in salida:
+            continue
+        salida[pid] = {"id_obra": SIN_ASIGNACION_ID, "estado": "Ausente"}
+    return salida
+
+
+def resumen_asistencia(asignaciones):
+    resumen = {"Presente": 0, "Ausente": 0, "Justificado": 0, "Sin marcar": 0}
+    for item in asignaciones.values():
+        estado = item.get("estado") or "Sin marcar"
+        resumen[estado] = resumen.get(estado, 0) + 1
+    return resumen
+
+
+def guardar_asistencia_bloque(fecha_jornada, id_obra, asignaciones):
+    payload = []
+    for pid, item in asignaciones.items():
+        if item.get("id_obra") != id_obra:
+            continue
+        estado = item.get("estado") or "Ausente"
+        if estado == "Sin marcar":
+            estado = "Ausente"
+        payload.append(
+            {
+                "fecha_jornada": fecha_jornada,
+                "id_obras": id_obra,
+                "id_persona": pid,
+                "asistencia": estado,
+                "cant_hs": 5 if estado in {"Presente", "Justificado"} else 0,
+            }
+        )
+    return upsert_asistencia_jornada(payload)
+
+
+def guardar_asistencia_dia(fecha_jornada, asignaciones):
+    payload = []
+    for pid, item in asignaciones.items():
+        estado = item.get("estado") or "Ausente"
+        if estado == "Sin marcar":
+            estado = "Ausente"
+        payload.append(
+            {
+                "fecha_jornada": fecha_jornada,
+                "id_obras": item.get("id_obra") if item.get("id_obra") is not None else SIN_ASIGNACION_ID,
+                "id_persona": pid,
+                "asistencia": estado,
+                "cant_hs": 5 if estado in {"Presente", "Justificado"} else 0,
+            }
+        )
+    return upsert_asistencia_jornada(payload)
+
+
+def sincronizar_asistencia_dia(fecha_jornada, asignaciones):
+    return guardar_asistencia_dia(fecha_jornada, asignaciones)
+
+
+def render_estado_persona(fecha_jornada, pid, asignaciones):
+    estado = asignaciones[pid].get("estado") or "Sin marcar"
+    c1, c2, c3 = st.columns(3)
+    for col, valor, label in [
+        (c1, "Presente", "Presente"),
+        (c2, "Ausente", "Ausente"),
+        (c3, "Justificado", "Justificado"),
+    ]:
+        with col:
+            if st.button(
+                f"âœ“ {label}" if estado == valor else label,
+                key=f"as_estado_{fecha_jornada}_{pid}_{valor}",
+                type="primary" if estado == valor else "secondary",
+                use_container_width=True,
+            ):
+                asignaciones[pid]["estado"] = valor
+                st.rerun()
+
+
+def render_bloque_asistencia(fecha_jornada, bloque, personal, personal_por_id, asignaciones):
+    id_obra = bloque.get("id_obra")
+    st.markdown(
+        f"""
+        <div class="as-card {'as-card-fixed' if bloque.get('fijo') else ''}">
+            <div class="as-card-title">{bloque_linea_1(bloque)}</div>
+            <div class="as-card-subtitle">{bloque_linea_2(bloque)}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    asignados = [pid for pid, item in asignaciones.items() if item.get("id_obra") == id_obra]
+    opciones = {nombre_personal(p): p.get("id_personal") for p in personal if p.get("id_personal") not in asignados}
+    c_add, c_btn = st.columns([4, 1])
+    with c_add:
+        persona_sel = st.selectbox("Agregar persona", [""] + list(opciones.keys()), key=f"as_add_sel_{fecha_jornada}_{id_obra}")
+    with c_btn:
+        st.write("")
+        if st.button("+", key=f"as_add_btn_{fecha_jornada}_{id_obra}", use_container_width=True):
+            if persona_sel:
+                pid = opciones[persona_sel]
+                viejo = asignaciones.get(pid, {}).get("id_obra")
+                if viejo is not None and viejo != id_obra:
+                    eliminar_asistencia_jornada(fecha_jornada, viejo, pid)
+                asignaciones[pid] = {"id_obra": id_obra, "estado": "Presente"}
+                st.rerun()
+
+    if not asignados:
+        st.caption("Esta obra/bloque todavia no tiene personal asignado.")
+    for pid in asignados:
+        persona = personal_por_id.get(pid, {})
+        nombre = nombre_personal(persona) or f"ID {pid}"
+        st.markdown(f"**{nombre}**")
+        render_estado_persona(fecha_jornada, pid, asignaciones)
+        if asignaciones[pid].get("estado") == "Sin marcar":
+            st.caption("Sin marcar")
+        if st.button("Quitar de este bloque", key=f"as_rm_{fecha_jornada}_{id_obra}_{pid}", use_container_width=True):
+            eliminar_asistencia_jornada(fecha_jornada, id_obra, pid)
+            asignaciones.pop(pid, None)
+            st.rerun()
+
+    if st.button("Guardar bloque", key=f"as_save_{fecha_jornada}_{id_obra}", type="primary", use_container_width=True):
+        guardar_asistencia_bloque(fecha_jornada, id_obra, asignaciones)
+        st.success("Bloque guardado.")
+
+
+def tab_carga_diaria():
+    st.subheader("Carga diaria")
+    fecha = date.today()
+    fecha_jornada = fecha_iso(fecha)
+    msg_key = f"asistencia_msg_{fecha_jornada}"
+    if st.session_state.get(msg_key):
+        st.success(st.session_state.pop(msg_key))
+
+    bloques = bloques_asistencia()
+    if not bloques:
+        st.info("No hay obras en ejecucion con modalidad Cuadrilla HAVITA o Mixta.")
+        return
+
     personal = listar_personal_activo()
     if not personal:
         st.info("No hay personal activo.")
         return
 
     personal_por_id = {p.get("id_personal"): p for p in personal}
-    asignados_otros = personas_asignadas_a_otras_obras(fecha_jornada, obra.get("id_obra"))
-    rows_bd = listar_asistencia_por_obra_fecha(fecha_jornada, obra.get("id_obra"))
-    estado_key = f"as_rows_{fecha_jornada}_{obra.get('id_obra')}"
-    if estado_key not in st.session_state:
-        if rows_bd:
-            seed = rows_bd
-            st.session_state[estado_key] = [
-                {
-                    "id_personal": r.get("id_persona"),
-                    "estado": limpiar(r.get("asistencia")) or "Ausente",
-                }
-                for r in seed
-            ]
+    asignaciones = completar_ausentes_default(inicializar_asistencia_dia(fecha_jornada, bloques), personal)
+    st.session_state[asistencia_estado_key(fecha_jornada)] = asignaciones
+
+    st.caption(f"Asistencias del dia - {fecha.strftime('%d/%m/%Y')}. La fecha es automatica y no editable.")
+
+    resultado = operational_attendance_board(
+        title="Asistencias del dia",
+        subtitle=f"{fecha.strftime('%d/%m/%Y')} - carga rapida por obra y bloque",
+        blocks=[
+            {
+                "id": b.get("id_obra"),
+                "line1": bloque_linea_1(b),
+                "line2": bloque_linea_2(b),
+                "fixed": bool(b.get("fijo")),
+            }
+            for b in bloques
+        ],
+        people=[
+            {"id": p.get("id_personal"), "name": nombre_personal_con_categoria(p)}
+            for p in personal
+            if p.get("id_personal") is not None
+        ],
+        assignments=asignaciones_para_componente(asignaciones),
+        copy_label="Copiar parte WhatsApp",
+        validate_label="Validar asistencia del dia",
+        key=f"asistencia_board_{fecha_jornada}",
+    )
+
+    if resultado and resultado.get("assignments") is not None:
+        asignaciones = asignaciones_desde_componente(resultado.get("assignments"))
+        st.session_state[asistencia_estado_key(fecha_jornada)] = asignaciones
+
+    if resultado and resultado.get("action") == "copy":
+        st.success("Parte copiado al portapapeles.")
+
+    if resultado and resultado.get("action") == "validate":
+        pendientes = []
+        bloque_por_id = {b.get("id_obra"): b for b in bloques}
+        for pid, item in asignaciones.items():
+            if item.get("estado") == "Sin marcar":
+                bloque = bloque_por_id.get(item.get("id_obra"), {})
+                nombre = nombre_personal(personal_por_id.get(pid, {})) or f"ID {pid}"
+                pendientes.append(f"{nombre} - {bloque_linea_1(bloque)}")
+        if pendientes:
+            st.warning(f"No se puede validar. Quedan {len(pendientes)} personas sin marcar.")
+            for pendiente in pendientes:
+                st.caption(pendiente)
         else:
-            seed = listar_ultima_asignacion_por_obra(obra.get("id_obra"), fecha_jornada)
-            st.session_state[estado_key] = [
-                {
-                    "id_personal": r.get("id_persona"),
-                    "estado": "Ausente",
-                }
-                for r in seed
-            ]
-
-    rows = st.session_state[estado_key]
-
-    with st.container(border=True):
-        titular = f"{texto(obra.get('apellido'))}, {texto(obra.get('nombre'))}".strip(", ")
-        st.markdown(f"### {titular or 'Sin beneficiario'}")
-        st.caption(f"Obra {obra.get('id_obra')} - {texto(obra.get('contacto')) or '-'}")
-        st.caption(f"Estado: {texto(obra.get('estado_obra')) or '-'}")
-
-        disponibles = []
-        for p in personal:
-            pid = p.get("id_personal")
-            if pid in asignados_otros:
-                continue
-            if any(x.get("id_personal") == pid for x in rows):
-                continue
-            disponibles.append(p)
-        opciones = {f"{texto(p.get('apellido'))}, {texto(p.get('nombre'))}": p.get("id_personal") for p in disponibles}
-
-        c1, c2 = st.columns([5, 1])
-        with c1:
-            persona_sel = st.selectbox("Agregar personal", [""] + list(opciones.keys()), key=f"as_add_sel_{obra.get('id_obra')}")
-        with c2:
-            st.write("")
-            if st.button("+", key=f"as_add_btn_{obra.get('id_obra')}", use_container_width=True):
-                if persona_sel:
-                    rows.append({"id_personal": opciones[persona_sel], "estado": "Ausente"})
-                    st.session_state[estado_key] = rows
-                    st.rerun()
-
-        if not rows:
-            st.info("Esta obra aun no tiene personal asignado.")
-            return
-
-        st.markdown("#### Personal asignado")
-        st.markdown("ID | Nombre | Asistencia |")
-        to_remove = []
-        for idx, row in enumerate(rows):
-            pid = row.get("id_personal")
-            p = personal_por_id.get(pid, {})
-            nombre = f"{texto(p.get('apellido'))}, {texto(p.get('nombre'))}".strip(", ") or f"ID {pid}"
-
-            c1, c2, c3, c4 = st.columns([1, 4.5, 2, 0.8])
-            with c1:
-                st.write(str(pid))
-            with c2:
-                st.write(nombre)
-            with c3:
-                estado = st.selectbox(
-                    "Asistencia",
-                    ["Ausente", "Presente", "Justificado"],
-                    index=["Ausente", "Presente", "Justificado"].index(row.get("estado")) if row.get("estado") in {"Ausente", "Presente", "Justificado"} else 0,
-                    key=f"as_est_{fecha_jornada}_{obra.get('id_obra')}_{pid}_{idx}",
-                    label_visibility="collapsed",
-                )
-            with c4:
-                if st.button("-", key=f"as_rm_{obra.get('id_obra')}_{pid}_{idx}", use_container_width=True):
-                    to_remove.append(idx)
-            row["estado"] = estado
-
-        if to_remove:
-            for idx in sorted(to_remove, reverse=True):
-                pid = rows[idx].get("id_personal")
-                eliminar_asistencia_jornada(fecha_jornada, obra.get("id_obra"), pid)
-                rows.pop(idx)
-            st.session_state[estado_key] = rows
+            for item in asignaciones.values():
+                if item.get("estado") == "Sin marcar":
+                    item["estado"] = "Ausente"
+            asignaciones = completar_ausentes_default(asignaciones, personal)
+            st.session_state[asistencia_estado_key(fecha_jornada)] = asignaciones
+            sincronizar_asistencia_dia(fecha_jornada, asignaciones)
+            st.session_state[msg_key] = "Asistencia del dia validada y guardada."
             st.rerun()
-
-        if st.button("Confirmar cargas", key=f"as_save_{obra.get('id_obra')}", type="primary", use_container_width=True):
-            payload = []
-            for row in rows:
-                estado = row.get("estado") or "Ausente"
-                cant_hs = 5 if estado in {"Presente", "Justificado"} else 0
-                payload.append(
-                    {
-                        "fecha_jornada": fecha_jornada,
-                        "id_obras": obra.get("id_obra"),
-                        "id_persona": row.get("id_personal"),
-                        "asistencia": estado,
-                        "cant_hs": cant_hs,
-                    }
-                )
-            upsert_asistencia_jornada(payload)
-            st.success("Cargas guardadas.")
-
-
-def tab_carga_diaria():
-    st.subheader("Carga diaria")
-    fecha = date.today()
-    st.text_input("Fecha", value=fecha.strftime("%d/%m/%Y"), disabled=True)
-
-    obras = obras_filtradas()
-    obras = obras + [
-        {"id_obra": -101, "apellido": "DD", "nombre": "Deposito", "contacto": "-", "estado_obra": "Frente fijo", "modalidad_ejecucion": "Fijo"},
-        {"id_obra": -102, "apellido": "OE", "nombre": "Obra externa", "contacto": "-", "estado_obra": "Frente fijo", "modalidad_ejecucion": "Fijo"},
-    ]
-    opciones = {etiqueta_obra(o): o for o in obras}
-    if not opciones:
-        st.info("No hay obras en ejecución con modalidad Cuadrilla HAVITA o Mixta.")
-        return
-
-    sel = st.selectbox("Seleccionar obra", list(opciones.keys()), key="as_obra_sel")
-    obra = opciones[sel]
-    card_asistencia_obra(fecha_iso(fecha), obra)
-
 
 def tab_planilla():
     st.subheader("Planilla de asistencia")
@@ -356,7 +538,7 @@ def tab_planilla():
         st.caption("Referencia valor hora por categoria: OFICIAL=3500, MEDIO OFICIAL=3200, AYUDANTE=2800, ADMINISTRATIVO=3000")
 
 
-st.set_page_config(page_title="Asistencia", layout="wide")
+require_login(["asistencia"])
 st.title("Asistencia")
 t1, t2 = st.tabs(["Carga diaria", "Planilla de asistencia"])
 with t1:

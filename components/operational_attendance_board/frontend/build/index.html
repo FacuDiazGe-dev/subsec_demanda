@@ -1,0 +1,640 @@
+﻿<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OperationalAttendanceBoard</title>
+    <style>
+      :root {
+        --text-main: #1e293b;
+        --text-secondary: #64748b;
+        --border: #e2e8f0;
+        --bg: #ffffff;
+        --bg-soft: #f8fafc;
+        --green: #006b68;
+        --green-dark: #004f4c;
+        --blue: #1d4ed8;
+        --amber: #d97706;
+        --red: #dc2626;
+        --muted: #94a3b8;
+      }
+      body {
+        margin: 0;
+        font-family: Inter, Roboto, Arial, sans-serif;
+        background: transparent;
+        color: var(--text-main);
+        overflow: hidden;
+      }
+      html,
+      #root {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+      }
+      .board {
+        box-sizing: border-box;
+        max-width: 980px;
+        margin: 0 auto;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: var(--bg);
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+        padding: 12px;
+      }
+      .header {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: flex-start;
+        margin-bottom: 10px;
+      }
+      .title {
+        font-size: 18px;
+        font-weight: 850;
+        margin: 0;
+      }
+      .subtitle {
+        color: var(--text-secondary);
+        font-size: 12.5px;
+        font-weight: 650;
+        margin-top: 3px;
+      }
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 7px;
+        margin: 8px 0 10px;
+      }
+      .metric {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--bg-soft);
+        padding: 7px 8px;
+      }
+      .metric-label {
+        color: var(--text-secondary);
+        font-size: 10.5px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+      .metric-value {
+        color: var(--text-main);
+        font-size: 19px;
+        font-weight: 850;
+        line-height: 1.05;
+        margin-top: 2px;
+      }
+      .block {
+        border: 1px solid #bfdbfe;
+        border-left: 5px solid var(--green);
+        border-radius: 16px;
+        padding: 0;
+        margin-top: 14px;
+        background: #ffffff;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.045);
+        overflow: hidden;
+      }
+      .block.fixed {
+        border-left-color: var(--muted);
+      }
+      .block-head {
+        background: linear-gradient(90deg, rgba(0, 107, 104, 0.08), #f8fafc 62%);
+        border-bottom: 1px solid #dbeafe;
+        padding: 10px 12px 9px;
+      }
+      .block.fixed .block-head {
+        background: linear-gradient(90deg, rgba(148, 163, 184, 0.14), #f8fafc 62%);
+      }
+      .block-body {
+        padding: 4px 10px 10px;
+      }
+      .block-main {
+        font-size: 14.5px;
+        font-weight: 850;
+        line-height: 1.25;
+      }
+      .block-sub {
+        color: var(--text-secondary);
+        font-size: 12.5px;
+        font-weight: 650;
+        line-height: 1.25;
+        margin-top: 2px;
+      }
+      .person {
+        border: 1px solid #edf2f7;
+        border-radius: 12px;
+        padding: 6px 7px;
+        margin-top: 6px;
+        background: #fff;
+      }
+      .person-line {
+        display: grid;
+        grid-template-columns: minmax(150px, 1fr) auto 24px;
+        gap: 8px;
+        align-items: center;
+      }
+      .person-name {
+        font-size: 13.5px;
+        font-weight: 800;
+        line-height: 1.2;
+      }
+      .remove {
+        border: 1px solid #fecaca;
+        color: var(--red);
+        background: #fff5f5;
+        border-radius: 9px;
+        width: 32px;
+        min-width: 32px;
+        height: 30px;
+        min-height: 30px;
+        font-weight: 850;
+        font-size: 14px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .remove:hover {
+        background: #fee2e2;
+      }
+      .state-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        justify-content: flex-end;
+        margin-top: 0;
+      }
+      .state-btn,
+      .add-btn,
+      .save-btn {
+        border: 1px solid #cbd5e1;
+        border-radius: 999px;
+        min-height: 28px;
+        background: #fff;
+        color: var(--text-main);
+        font-size: 11.5px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+      .state-btn {
+        padding: 0 10px;
+        min-width: 82px;
+        box-shadow: none;
+      }
+      .state-btn.active.presente {
+        background: #e6f4f1;
+        border-color: #7bb9ae;
+        color: var(--green-dark);
+      }
+      .state-btn.active.ausente {
+        background: #fff1f2;
+        border-color: #fecdd3;
+        color: #be123c;
+      }
+      .state-btn.active.justificado {
+        background: #fff7ed;
+        border-color: #fed7aa;
+        color: #9a3412;
+      }
+      .sin-marcar {
+        color: var(--amber);
+        font-size: 12px;
+        font-weight: 750;
+        margin-top: 4px;
+      }
+      .add-row {
+        display: grid;
+        grid-template-columns: 1fr 72px;
+        gap: 7px;
+        margin-top: 10px;
+      }
+      .select {
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        min-height: 35px;
+        padding: 6px 8px;
+        font-size: 13px;
+        font-weight: 650;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      .add-btn {
+        border-radius: 10px;
+        background: var(--green);
+        border-color: var(--green);
+        color: #fff;
+      }
+      .empty {
+        margin-top: 8px;
+        padding: 9px;
+        border: 1px dashed #cbd5e1;
+        border-radius: 12px;
+        color: var(--text-secondary);
+        font-size: 12.5px;
+        font-weight: 650;
+      }
+      .footer {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+        margin-top: 12px;
+      }
+      .copy-note {
+        color: var(--green-dark);
+        font-size: 12px;
+        font-weight: 800;
+        text-align: right;
+        margin-top: 6px;
+        min-height: 15px;
+      }
+      .save-btn {
+        padding: 0 14px;
+      }
+      .save-btn.primary {
+        background: var(--green);
+        border-color: var(--green);
+        color: #fff;
+      }
+      .warning {
+        color: #9a3412;
+        background: #fff7ed;
+        border: 1px solid #fed7aa;
+        border-radius: 12px;
+        padding: 8px;
+        font-size: 12.5px;
+        font-weight: 700;
+        margin-top: 8px;
+      }
+      @media (max-width: 560px) {
+        .board {
+          max-width: none;
+          padding: 10px;
+        }
+        .metrics {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 5px;
+        }
+        .metric {
+          padding: 6px 5px;
+        }
+        .metric-label {
+          font-size: 9.5px;
+        }
+        .metric-value {
+          font-size: 17px;
+        }
+        .block {
+          margin-top: 12px;
+        }
+        .block-head {
+          padding: 9px 10px 8px;
+        }
+        .block-body {
+          padding: 2px 8px 9px;
+        }
+        .person {
+          padding: 7px;
+          margin-top: 7px;
+        }
+        .person-line {
+          grid-template-columns: 1fr 28px;
+          grid-template-areas:
+            "name remove"
+            "states states";
+          gap: 6px;
+        }
+        .person-name {
+          grid-area: name;
+          font-size: 13.5px;
+        }
+        .remove {
+          grid-area: remove;
+          width: 28px;
+          min-width: 28px;
+          height: 28px;
+          min-height: 28px;
+          border-radius: 9px;
+        }
+        .state-row {
+          grid-area: states;
+          grid-column: 1 / -1;
+          justify-content: stretch;
+          gap: 4px;
+          margin-top: 6px;
+        }
+        .state-btn {
+          flex: 1 1 0;
+          min-height: 34px;
+          min-width: 0;
+          padding: 0 6px;
+          font-size: 10.8px;
+        }
+        .add-row {
+          grid-template-columns: 1fr 54px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      const root = document.getElementById("root");
+      const MSG = {
+        COMPONENT_READY: "streamlit:componentReady",
+        SET_COMPONENT_VALUE: "streamlit:setComponentValue",
+        SET_FRAME_HEIGHT: "streamlit:setFrameHeight",
+        RENDER: "streamlit:render",
+      };
+
+      let props = {};
+      let assignments = {};
+      let initialized = false;
+      let isDirty = false;
+      let eventSeq = 0;
+      let copyMessage = "";
+
+      const esc = (v) =>
+        String(v ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;");
+
+      function send(type, data = {}) {
+        window.parent.postMessage({ isStreamlitMessage: true, type, ...data }, "*");
+      }
+
+      function setReady() {
+        send(MSG.COMPONENT_READY, { apiVersion: 1 });
+      }
+
+      function setHeight() {
+        const el = document.getElementById("boardRoot");
+        const h = el ? Math.ceil(el.getBoundingClientRect().height) : 160;
+        send(MSG.SET_FRAME_HEIGHT, { height: h });
+      }
+
+      function assignmentRows() {
+        return Object.entries(assignments).map(([personId, item]) => ({
+          person_id: personId,
+          block_id: item.block_id,
+          status: item.status || "Sin marcar",
+        }));
+      }
+
+      function emit(action) {
+        send(MSG.SET_COMPONENT_VALUE, {
+          dataType: "json",
+          value: {
+            action,
+            event_id: `${Date.now()}_${eventSeq++}`,
+            assignments: assignmentRows(),
+          },
+        });
+      }
+
+      function normalizeAssignments(input) {
+        const out = {};
+        (Array.isArray(input) ? input : []).forEach((row) => {
+          const pid = String(row.person_id || row.id_personal || "");
+          if (!pid) return;
+          out[pid] = {
+            block_id: String(row.block_id || row.id_obra || ""),
+            status: row.status || row.estado || "Sin marcar",
+          };
+        });
+        return out;
+      }
+
+      function signature(obj) {
+        return JSON.stringify(Object.entries(obj).sort());
+      }
+
+      function peopleById() {
+        const map = {};
+        (props.people || []).forEach((p) => {
+          map[String(p.id || p.id_personal)] = p;
+        });
+        return map;
+      }
+
+      function metrics() {
+        const counts = { Presente: 0, Ausente: 0, Justificado: 0, "Sin marcar": 0 };
+        Object.values(assignments).forEach((a) => {
+          const s = a.status || "Sin marcar";
+          counts[s] = (counts[s] || 0) + 1;
+        });
+        return counts;
+      }
+
+      function setStatus(personId, status) {
+        if (!assignments[personId]) return;
+        assignments[personId].status = status;
+        isDirty = true;
+        render();
+      }
+
+      function movePerson(personId, blockId) {
+        assignments[personId] = { block_id: blockId, status: "Presente" };
+        isDirty = true;
+        render();
+      }
+
+      function removePerson(personId) {
+        delete assignments[personId];
+        isDirty = true;
+        render();
+      }
+
+      function plainPersonName(person) {
+        return person.name || `${person.apellido || ""}, ${person.nombre || ""}`.trim() || "";
+      }
+
+      function buildAttendanceText() {
+        const blocks = Array.isArray(props.blocks) ? props.blocks : [];
+        const pmap = peopleById();
+        const today = new Date();
+        const day = String(today.getDate()).padStart(2, "0");
+        const month = String(today.getMonth() + 1).padStart(2, "0");
+        const lines = [`*ASISTENCIA EN OBRAS ${day}/${month}*`];
+
+        blocks.forEach((block) => {
+          const blockId = String(block.id || block.id_obra);
+          const present = Object.entries(assignments)
+            .filter(([, a]) => String(a.block_id) === blockId && a.status === "Presente")
+            .map(([pid]) => plainPersonName(pmap[pid] || {}) || `ID ${pid}`)
+            .sort((a, b) => a.localeCompare(b));
+
+          if (!present.length) return;
+          lines.push("");
+          lines.push(`*${block.line1 || block.title || "Bloque"}*`);
+          if (block.line2 || block.subtitle) lines.push(`_${block.line2 || block.subtitle}_`);
+          lines.push("*Presentes:*");
+          present.forEach((name) => lines.push(`- ${name}`));
+        });
+
+        if (lines.length === 1) {
+          lines.push("");
+          lines.push("Sin personal presente registrado.");
+        }
+        return lines.join("\n");
+      }
+
+      async function copyAttendanceText() {
+        const text = buildAttendanceText();
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+          } else {
+            const area = document.createElement("textarea");
+            area.value = text;
+            area.style.position = "fixed";
+            area.style.left = "-9999px";
+            document.body.appendChild(area);
+            area.focus();
+            area.select();
+            document.execCommand("copy");
+            document.body.removeChild(area);
+          }
+          copyMessage = "Parte copiado al portapapeles.";
+          emit("copy");
+        } catch (err) {
+          copyMessage = "No se pudo copiar. Mantenga presionado y copie manualmente desde el navegador.";
+          emit("copy_error");
+        }
+        render();
+      }
+
+      function render() {
+        const title = esc(props.title || "Asistencias del dia");
+        const subtitle = esc(props.subtitle || "");
+        const copyLabel = esc(props.copy_label || props.save_label || "Copiar parte");
+        const validateLabel = esc(props.validate_label || "Validar asistencia");
+        const blocks = Array.isArray(props.blocks) ? props.blocks : [];
+        const people = Array.isArray(props.people) ? props.people : [];
+        const pmap = peopleById();
+        const counts = metrics();
+
+        root.innerHTML = `
+          <div id="boardRoot" class="board">
+            <div class="header">
+              <div>
+                <h3 class="title">${title}</h3>
+                ${subtitle ? `<div class="subtitle">${subtitle}</div>` : ""}
+              </div>
+            </div>
+            <div class="metrics">
+              ${metricHtml("Presentes", counts.Presente)}
+              ${metricHtml("Ausentes", counts.Ausente)}
+              ${metricHtml("Justif.", counts.Justificado)}
+              ${metricHtml("Sin marcar", counts["Sin marcar"])}
+            </div>
+            ${blocks.map((b) => blockHtml(b, pmap, people)).join("")}
+            <div class="footer">
+              <button id="validateBtn" class="save-btn primary">${validateLabel}</button>
+              <button id="copyBtn" class="save-btn">${copyLabel}</button>
+            </div>
+            <div class="copy-note">${esc(copyMessage)}</div>
+          </div>
+        `;
+
+        document.querySelectorAll("[data-status-person]").forEach((btn) => {
+          btn.addEventListener("click", () => setStatus(btn.dataset.statusPerson, btn.dataset.status));
+        });
+        document.querySelectorAll("[data-remove-person]").forEach((btn) => {
+          btn.addEventListener("click", () => removePerson(btn.dataset.removePerson));
+        });
+        document.querySelectorAll("[data-add-block]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const select = document.getElementById(`add_${btn.dataset.addBlock}`);
+            if (select && select.value) movePerson(select.value, btn.dataset.addBlock);
+          });
+        });
+        document.getElementById("copyBtn").addEventListener("click", copyAttendanceText);
+        document.getElementById("validateBtn").addEventListener("click", () => emit("validate"));
+        requestAnimationFrame(setHeight);
+      }
+
+      function metricHtml(label, value) {
+        return `<div class="metric"><div class="metric-label">${esc(label)}</div><div class="metric-value">${value || 0}</div></div>`;
+      }
+
+      function blockHtml(block, pmap, people) {
+        const blockId = String(block.id || block.id_obra);
+        const assigned = Object.entries(assignments).filter(([, a]) => String(a.block_id) === blockId);
+        const assignedIds = new Set(assigned.map(([pid]) => pid));
+        const options = people
+          .filter((p) => !assignedIds.has(String(p.id || p.id_personal)))
+          .map((p) => {
+            const pid = esc(p.id || p.id_personal);
+            return `<option value="${pid}">${esc(p.name || `${p.apellido || ""}, ${p.nombre || ""}`.trim())}</option>`;
+          })
+          .join("");
+        return `
+          <div class="block ${block.fixed ? "fixed" : ""}">
+            <div class="block-head">
+              <div class="block-main">${esc(block.line1 || block.title || "")}</div>
+              <div class="block-sub">${esc(block.line2 || block.subtitle || "")}</div>
+            </div>
+            <div class="block-body">
+              ${
+                assigned.length
+                  ? assigned.map(([pid, a]) => personHtml(pid, a, pmap[pid] || {})).join("")
+                  : `<div class="empty">Sin personal asignado.</div>`
+              }
+              <div class="add-row">
+                <select id="add_${blockId}" class="select">
+                  <option value="">Agregar persona</option>
+                  ${options}
+                </select>
+                <button class="add-btn" data-add-block="${esc(blockId)}">+</button>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      function personHtml(pid, assignment, person) {
+        const status = assignment.status || "Sin marcar";
+        const name = person.name || `${person.apellido || ""}, ${person.nombre || ""}`.trim() || `ID ${pid}`;
+        return `
+          <div class="person">
+            <div class="person-line">
+              <div class="person-name">${esc(name)}</div>
+              <div class="state-row">
+                ${stateBtn(pid, status, "Presente", "presente")}
+                ${stateBtn(pid, status, "Ausente", "ausente")}
+                ${stateBtn(pid, status, "Justificado", "justificado")}
+              </div>
+              <button class="remove" data-remove-person="${esc(pid)}">-</button>
+            </div>
+            ${status === "Sin marcar" ? `<div class="sin-marcar">Sin marcar</div>` : ""}
+          </div>
+        `;
+      }
+
+      function stateBtn(pid, current, status, cls) {
+        const active = current === status ? "active" : "";
+        const label = current === status ? `&#10003; ${status}` : status;
+        return `<button class="state-btn ${active} ${cls}" data-status-person="${esc(pid)}" data-status="${status}">${label}</button>`;
+      }
+
+      window.addEventListener("message", (event) => {
+        const data = event.data || {};
+        if (data.type === MSG.RENDER) {
+          props = data.args || {};
+          const incoming = normalizeAssignments(props.assignments);
+          const incomingSig = signature(incoming);
+          const localSig = signature(assignments);
+          if (!initialized || !isDirty || incomingSig === localSig) {
+            assignments = incoming;
+            initialized = true;
+            if (incomingSig === localSig) isDirty = false;
+          }
+          render();
+        }
+      });
+
+      setReady();
+      setHeight();
+    </script>
+  </body>
+</html>
+

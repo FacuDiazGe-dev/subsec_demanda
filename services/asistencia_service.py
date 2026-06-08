@@ -60,12 +60,40 @@ def upsert_asistencia_jornada(rows):
     if not rows:
         return []
     supabase = get_supabase_client()
-    response = (
-        supabase.table("asistencia_jornada")
-        .upsert(rows, on_conflict="fecha_jornada,id_obras,id_persona")
-        .execute()
-    )
-    return response.data or []
+    guardadas = []
+    for row in rows:
+        fecha = row.get("fecha_jornada")
+        persona = row.get("id_persona")
+        if fecha is None or persona is None:
+            continue
+
+        existente = (
+            supabase.table("asistencia_jornada")
+            .select("id_jornada")
+            .eq("fecha_jornada", fecha)
+            .eq("id_persona", persona)
+            .limit(1)
+            .execute()
+        ).data or []
+
+        payload = {
+            "fecha_jornada": fecha,
+            "id_obras": row.get("id_obras"),
+            "id_persona": persona,
+            "asistencia": row.get("asistencia"),
+            "cant_hs": row.get("cant_hs"),
+        }
+        if existente:
+            data = (
+                supabase.table("asistencia_jornada")
+                .update(payload)
+                .eq("id_jornada", existente[0].get("id_jornada"))
+                .execute()
+            ).data or []
+        else:
+            data = supabase.table("asistencia_jornada").insert(payload).execute().data or []
+        guardadas.extend(data)
+    return guardadas
 
 
 def actualizar_cant_hs_persona_fecha(fecha_jornada, id_persona, cant_hs):

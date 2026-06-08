@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OperationalCard</title>
+    <style>
+      :root {
+        --text-main: #1e293b;
+        --text-secondary: #64748b;
+        --border: #e2e8f0;
+        --bg: #ffffff;
+        --blue: #1d4ed8;
+        --green: #006b68;
+        --green-dark: #004f4c;
+        --success-green: #16a34a;
+        --amber: #f59e0b;
+        --red: #dc2626;
+        --muted: #94a3b8;
+      }
+      body {
+        margin: 0;
+        font-family: Inter, Roboto, Arial, sans-serif;
+        background: transparent;
+        color: var(--text-main);
+        overflow: hidden;
+      }
+      html,
+      #root {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+      }
+      .card {
+        position: relative;
+        box-sizing: border-box;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: var(--bg);
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+        padding: 9px 14px 8px;
+        margin: 0;
+        overflow: hidden;
+      }
+      .card::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 5px;
+        background: var(--accent, var(--muted));
+      }
+      .variant-default { --accent: var(--muted); }
+      .variant-highlight { --accent: var(--blue); }
+      .variant-success { --accent: var(--success-green); }
+      .variant-warning { --accent: var(--amber); }
+      .variant-danger { --accent: var(--red); }
+      .variant-muted { --accent: var(--muted); }
+
+      .selected {
+        border-color: #60a5fa;
+        background: #f8fbff;
+        box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.25), 0 4px 12px rgba(15, 23, 42, 0.06);
+      }
+      .clickable { cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease; }
+      .clickable:hover { border-color: #bfdbfe; box-shadow: 0 3px 10px rgba(15, 23, 42, 0.07); }
+
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 10px;
+      }
+      .title {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 700;
+      }
+      .subtitle {
+        margin-top: 2px;
+        color: var(--text-secondary);
+        font-size: 13px;
+      }
+      .badges {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        align-items: center;
+      }
+      .badge {
+        border-radius: 999px;
+        padding: 3px 9px;
+        font-size: 11px;
+        font-weight: 700;
+        border: 1px solid #cbd5e1;
+        background: #f8fafc;
+        color: #334155;
+        white-space: nowrap;
+      }
+      .badge-status { background: #eef2ff; border-color: #c7d2fe; color: #3730a3; }
+      .badge-priority { background: #fff7ed; border-color: #fed7aa; color: #9a3412; }
+
+      .meta {
+        margin-top: 5px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .chip {
+        font-size: 12px;
+        color: #475569;
+        background: #f8fafc;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 2px 8px;
+      }
+      .chip:first-child {
+        color: var(--accent, #1d4ed8);
+        border-color: var(--accent, #93c5fd);
+        background: #ffffff;
+        font-weight: 750;
+      }
+      .description {
+        margin-top: 7px;
+        font-size: 13px;
+        line-height: 1.35;
+        color: var(--text-main);
+      }
+      .footer {
+        margin-top: 7px;
+        padding-top: 6px;
+        border-top: 1px solid var(--border);
+        font-size: 12px;
+        color: var(--text-secondary);
+        font-weight: 600;
+      }
+      .actions {
+        margin-top: 10px;
+        display: grid;
+        gap: 8px;
+      }
+      .actions.cols-1 { grid-template-columns: 1fr; }
+      .actions.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .actions.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .btn {
+        border-radius: 10px;
+        border: 1px solid #cbd5e1;
+        min-height: 34px;
+        padding: 8px 10px;
+        font-size: 13px;
+        font-weight: 650;
+        background: #fff;
+        color: #1e293b;
+        cursor: pointer;
+      }
+      .btn:hover { filter: brightness(0.98); }
+      .btn-primary { background: var(--green); border-color: var(--green); color: #fff; }
+      .btn-primary:hover { background: var(--green-dark); border-color: var(--green-dark); filter: none; }
+      .btn-success { background: var(--success-green); border-color: var(--success-green); color: #fff; }
+      .btn-warning { background: var(--amber); border-color: var(--amber); color: #111827; }
+      .btn-danger { background: #fff1f2; border-color: #fecdd3; color: #be123c; }
+      .btn-corner {
+        min-height: 26px;
+        padding: 4px 9px;
+        font-size: 12px;
+        border-radius: 8px;
+        white-space: nowrap;
+      }
+      .bottom-row {
+        margin-top: 7px;
+        padding-top: 6px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .bottom-row .footer {
+        margin: 0;
+        padding: 0;
+        border-top: 0;
+        min-width: 0;
+      }
+      .corner-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 6px;
+        margin-left: auto;
+        flex: 0 0 auto;
+      }
+
+      .select-row {
+        margin-top: 8px;
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      const root = document.getElementById("root");
+      const toArray = (v) => (Array.isArray(v) ? v : []);
+      const esc = (v) =>
+        String(v ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;");
+
+      const MSG = {
+        COMPONENT_READY: "streamlit:componentReady",
+        SET_COMPONENT_VALUE: "streamlit:setComponentValue",
+        SET_FRAME_HEIGHT: "streamlit:setFrameHeight",
+        RENDER: "streamlit:render",
+      };
+
+      let currentProps = {};
+      let eventSeq = 0;
+
+      function send(type, data = {}) {
+        window.parent.postMessage(
+          { isStreamlitMessage: true, type, ...data },
+          "*"
+        );
+      }
+
+      function setComponentReady() {
+        send(MSG.COMPONENT_READY, { apiVersion: 1 });
+      }
+
+      function setFrameHeight(height) {
+        const card = document.getElementById("cardRoot");
+        const measured = card ? Math.ceil(card.getBoundingClientRect().height) : 0;
+        const h = height || measured || document.documentElement.scrollHeight || 120;
+        send(MSG.SET_FRAME_HEIGHT, { height: h });
+      }
+
+      function setComponentValue(value) {
+        const payload =
+          value && typeof value === "object"
+            ? { ...value, event_id: `${Date.now()}_${eventSeq++}` }
+            : value;
+        send(MSG.SET_COMPONENT_VALUE, { value: payload, dataType: "json" });
+      }
+
+      function normalizeActions(actions) {
+        return toArray(actions)
+          .slice(0, 3)
+          .map((a, i) => ({
+            label: esc((a && a.label) || "Accion"),
+            key: String((a && a.key) || `action_${i}`),
+            kind: String((a && a.kind) || "secondary"),
+          }));
+      }
+
+      function render(props) {
+        currentProps = props || {};
+        const title = esc(currentProps.title || "");
+        const subtitle = esc(currentProps.subtitle || "");
+        const status = esc(currentProps.status || "");
+        const priority = esc(currentProps.priority || "");
+        const description = esc(currentProps.description || "");
+        const footer = esc(currentProps.footer || "");
+        const variant = esc(currentProps.variant || "default");
+        const accentColor = esc(currentProps.accent_color || "");
+        const actionsLayout = String(currentProps.actions_layout || "footer");
+        const cardKey = String(currentProps.card_key || "");
+        const selectable = !!currentProps.selectable;
+        const selected = !!currentProps.selected;
+        const selectableLabel = esc(currentProps.selectable_label || "Seleccionar");
+        const clickable = !!currentProps.clickable;
+        const meta = toArray(currentProps.meta || []).map((m) => esc(m));
+        const actions = normalizeActions(currentProps.actions);
+        const cols = Math.max(1, actions.length || 1);
+
+        const classes = ["card", `variant-${variant}`];
+        if (selected) classes.push("selected");
+        if (clickable) classes.push("clickable");
+
+        root.innerHTML = `
+          <div id="cardRoot" class="${classes.join(" ")}" style="${accentColor ? `--accent:${accentColor};` : ""}">
+            <div class="header">
+              <div>
+                <h4 class="title">${title}</h4>
+                ${subtitle ? `<div class="subtitle">${subtitle}</div>` : ""}
+              </div>
+              <div class="badges">
+                ${status ? `<span class="badge badge-status">${status}</span>` : ""}
+                ${priority ? `<span class="badge badge-priority">${priority}</span>` : ""}
+              </div>
+            </div>
+            ${
+              meta.length
+                ? `<div class="meta">${meta
+                    .map((m) => `<span class="chip">${m}</span>`)
+                    .join("")}</div>`
+                : ""
+            }
+            ${description ? `<div class="description">${description}</div>` : ""}
+            ${
+              actionsLayout === "corner" && (footer || actions.length)
+                ? `<div class="bottom-row">
+                    ${footer ? `<div class="footer">${footer}</div>` : `<div></div>`}
+                    ${
+                      actions.length
+                        ? `<div class="corner-actions">
+                            ${actions
+                              .map(
+                                (a) =>
+                                  `<button class="btn btn-${esc(a.kind)} btn-corner" data-action-key="${esc(
+                                    a.key
+                                  )}">${a.label}</button>`
+                              )
+                              .join("")}
+                          </div>`
+                        : ""
+                    }
+                  </div>`
+                : footer
+                  ? `<div class="footer">${footer}</div>`
+                  : ""
+            }
+            ${
+              selectable
+                ? `
+              <div class="select-row" id="selectRow">
+                <label for="selectCheck">${selectableLabel}</label>
+                <input id="selectCheck" type="checkbox" ${selected ? "checked" : ""} />
+              </div>`
+                : ""
+            }
+            ${
+              actionsLayout !== "corner" && actions.length
+                ? `<div class="actions cols-${cols}" id="actionsWrap">
+                    ${actions
+                      .map(
+                        (a) =>
+                          `<button class="btn btn-${esc(a.kind)}" data-action-key="${esc(
+                            a.key
+                          )}">${a.label}</button>`
+                      )
+                      .join("")}
+                  </div>`
+                : ""
+            }
+          </div>
+        `;
+
+        const cardEl = document.getElementById("cardRoot");
+        if (clickable && cardEl) {
+          cardEl.addEventListener("click", (ev) => {
+            const isButton = ev.target.closest("button");
+            const isCheck = ev.target.closest("#selectRow");
+            if (isButton || isCheck) return;
+            setComponentValue({
+              card_key: cardKey || null,
+              action: "card_click",
+              selected: selected,
+            });
+          });
+        }
+
+        const checkEl = document.getElementById("selectCheck");
+        if (checkEl) {
+          checkEl.addEventListener("change", (ev) => {
+            setComponentValue({
+              card_key: cardKey || null,
+              action: "toggle_select",
+              selected: !!ev.target.checked,
+            });
+          });
+        }
+
+        const actionsWrap = document.getElementById("actionsWrap");
+        if (actionsWrap) {
+          actionsWrap.querySelectorAll("button[data-action-key]").forEach((btn) => {
+            btn.addEventListener("click", (ev) => {
+              ev.stopPropagation();
+              setComponentValue({
+                card_key: cardKey || null,
+                action: btn.dataset.actionKey,
+                selected: !!(document.getElementById("selectCheck")?.checked ?? selected),
+              });
+            });
+          });
+        }
+
+        document.querySelectorAll(".btn-corner[data-action-key]").forEach((btn) => {
+          btn.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            setComponentValue({
+              card_key: cardKey || null,
+              action: btn.dataset.actionKey,
+              selected: selected,
+            });
+          });
+        });
+
+        requestAnimationFrame(() => setFrameHeight());
+      }
+
+      window.addEventListener("message", (event) => {
+        const data = event.data || {};
+        if (data.type === MSG.RENDER) {
+          render(data.args || {});
+        }
+      });
+
+      setComponentReady();
+      setFrameHeight(1);
+    </script>
+  </body>
+</html>

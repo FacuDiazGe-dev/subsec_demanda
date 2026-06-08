@@ -1,9 +1,8 @@
-from datetime import datetime
+from html import escape
 
-import pandas as pd
 import streamlit as st
 
-from services.demandas_service import listar_demandas_abiertas
+from utils.auth import require_login
 from services.materiales_base_service import listar_materiales_base_activos
 from services.materiales_orden_service import (
     crear_materiales_orden,
@@ -11,13 +10,14 @@ from services.materiales_orden_service import (
     listar_materiales_por_orden,
 )
 from services.ordenes_service import (
-    actualizar_orden_material,
-    crear_orden_material,
+    actualizar_orden_detalle,
     eliminar_orden_material,
     listar_ordenes_con_demanda,
     obtener_datos_pdf_orden,
 )
 from services.pdf_orden_service import generar_pdf_orden
+from utils.operational_card_component import operational_card
+from utils.operational_list_editor_component import operational_list_editor
 
 
 ESTADOS_ORDEN = [
@@ -30,13 +30,6 @@ ESTADOS_ORDEN = [
     "Entregado",
     "Cancelado",
 ]
-TIPOS_STOCK = {
-    "gestion de stock",
-    "compra para emergencias",
-    "reposicion de deposito",
-    "insumos internos",
-    "herramientas / equipamiento",
-}
 
 
 def texto(valor):
@@ -57,57 +50,12 @@ def fecha_visible(valor):
     return valor
 
 
-def parsear_fecha_ddmmaa(valor):
-    valor = limpiar(valor)
-    if not valor:
-        return None
-    try:
-        return datetime.strptime(valor, "%d/%m/%y").date().isoformat()
-    except ValueError:
-        return None
-
-
-def formatear_cantidad(valor):
-    try:
-        numero = float(valor)
-    except (TypeError, ValueError):
-        return ""
-    if numero.is_integer():
-        return str(int(numero))
-    return f"{numero:.2f}".rstrip("0").rstrip(".")
-
-
 def mostrar_error_supabase(error):
     mensaje = str(error)
     if "row-level security" in mensaje:
         st.error("Supabase bloqueo la operacion por RLS. Revisa policies de la tabla.")
         return
     st.error(f"No se pudo completar la operacion en Supabase: {mensaje}")
-
-
-def tipo_materiales_desde_obs(demanda):
-    obs = limpiar(demanda.get("observaciones"))
-    prefijo = "tipo materiales:"
-    if obs.lower().startswith(prefijo):
-        resto = obs[len(prefijo) :].strip()
-        return resto.split(".")[0].strip()
-    return ""
-
-
-def es_demanda_stock(demanda):
-    accion = limpiar(demanda.get("accion")).lower()
-    if accion != "entregar materiales":
-        return False
-    tipo = tipo_materiales_desde_obs(demanda).lower()
-    return tipo in TIPOS_STOCK
-
-
-def etiqueta_demanda(d):
-    return (
-        f"ID {d.get('id_demanda')} | Expte {texto(d.get('expediente'))} | "
-        f"{texto(d.get('apellido'))}, {texto(d.get('nombre'))} | {texto(d.get('barrio'))} | "
-        f"{texto(d.get('accion'))} | {texto(d.get('estado'))}"
-    )
 
 
 @st.cache_data(ttl=300)
@@ -127,112 +75,364 @@ def opciones_materiales_base():
     return opciones, mapa
 
 
-def key_tmp(prefijo):
-    return f"{prefijo}_materiales_tmp"
-
-
-def init_tmp(prefijo):
-    if key_tmp(prefijo) not in st.session_state:
-        st.session_state[key_tmp(prefijo)] = []
-
-
-def editor_materiales(prefijo):
-    init_tmp(prefijo)
-    opciones, mapa = opciones_materiales_base()
-    c1, c2 = st.columns([3, 1])
-    with c1:
-        seleccion = st.selectbox(
-            "Material",
-            options=opciones,
-            index=None,
-            key=f"{prefijo}_material",
-            placeholder="Escriba para sugerir o cargue manual",
-            accept_new_options=True,
-            filter_mode="contains",
-        )
-    with c2:
-        cantidad = st.number_input("Cantidad", min_value=0.0, step=1.0, format="%.2f", key=f"{prefijo}_cantidad")
-    if st.button("Agregar material", key=f"{prefijo}_add", use_container_width=True):
-        material = limpiar(mapa.get(seleccion, seleccion))
-        if material:
-            st.session_state[key_tmp(prefijo)].append(
-                {"Material": material, "cantidad": formatear_cantidad(cantidad)}
-            )
-            st.rerun()
-
-    tmp = st.session_state.get(key_tmp(prefijo), [])
-    if not tmp:
-        st.caption("Sin materiales cargados.")
-        return []
-    st.dataframe(pd.DataFrame(tmp), hide_index=True, use_container_width=True, height=180)
-    if st.button("Limpiar lista", key=f"{prefijo}_clear", use_container_width=True):
-        st.session_state[key_tmp(prefijo)] = []
-        st.rerun()
-    return tmp
-
-
-def ficha_demanda(d):
-    if es_demanda_stock(d):
-        st.info(
-            f"Destino: Deposito / Stock | Tipo: {tipo_materiales_desde_obs(d) or 'Gestion de stock'} | "
-            f"Origen: {texto(d.get('origen'))} | Prioridad: {texto(d.get('prioridad'))}"
-        )
-    else:
-        st.caption(
-            f"Expte: {texto(d.get('expediente'))} | Persona: {texto(d.get('apellido'))}, {texto(d.get('nombre'))} | "
-            f"DNI: {texto(d.get('dni'))} | Domicilio: {texto(d.get('domicilio'))} - {texto(d.get('barrio'))} | "
-            f"Contacto: {texto(d.get('contacto'))}"
-        )
-
-
-def tab_nueva():
-    demandas = listar_demandas_abiertas()
-    demandas = [d for d in demandas if limpiar(d.get("accion")).lower() in {"obra", "emergencia", "emerencia"} or es_demanda_stock(d)]
-    if not demandas:
-        st.info("No hay demandas abiertas elegibles para generar orden.")
-        return
-    opciones = {etiqueta_demanda(d): d for d in demandas}
-    sel = st.selectbox("Demanda vinculada", list(opciones.keys()))
-    d = opciones[sel]
-    ficha_demanda(d)
-
-    instrucciones = st.text_area("Instrucciones / tarea", height=120)
-    estado_default = "Pedido retiro" if es_demanda_stock(d) else "Pedido entrega"
-    estado = st.selectbox("Estado inicial", ESTADOS_ORDEN, index=ESTADOS_ORDEN.index(estado_default))
-    agregar_materiales = st.checkbox("Agregar materiales asociados (opcional)")
-    materiales = []
-    if agregar_materiales:
-        materiales = editor_materiales("orden_nueva")
-
-    if st.button("Crear orden", type="primary", use_container_width=True):
-        if not limpiar(instrucciones):
-            st.warning("Completa la instruccion antes de crear.")
-            return
-        try:
-            orden = crear_orden_material(
-                {
-                    "id_demanda": d.get("id_demanda"),
-                    "origen": d.get("origen"),
-                    "estado": estado,
-                    "instrucciones_tarea": instrucciones,
-                }
-            )
-            if orden and materiales:
-                crear_materiales_orden(orden.get("n_orden"), materiales)
-                st.session_state[key_tmp("orden_nueva")] = []
-        except Exception as error:
-            mostrar_error_supabase(error)
-            return
-        st.success(f"Orden creada. N° {texto(orden.get('n_orden'))}")
-        st.rerun()
-
-
 def nombre_pdf(orden, demanda):
     expte = limpiar(demanda.get("expediente")).replace("/", "-").replace("\\", "-") or "sin-expediente"
     return f"orden_N{orden.get('n_orden')}_expte_{expte}.pdf"
 
 
-def tab_seguimiento():
+def sin_dato(valor):
+    valor = limpiar(valor)
+    return valor if valor and valor.lower() not in {"nan", "none", "null", "-"} else "Sin dato"
+
+
+def normalizar_texto(valor):
+    return limpiar(valor).lower()
+
+
+def nombre_persona_orden(orden):
+    apellido = limpiar(orden.get("apellido")).upper()
+    nombre = limpiar(orden.get("nombre"))
+    if apellido and nombre:
+        return f"{apellido}, {nombre}"
+    return apellido or nombre or "Sin titular"
+
+
+def estado_variante_orden(estado):
+    estado_n = normalizar_texto(estado)
+    if "cancel" in estado_n:
+        return "danger"
+    if "entregado" in estado_n:
+        return "success"
+    if "parcial" in estado_n:
+        return "warning"
+    if "pendiente" in estado_n:
+        return "highlight"
+    if "deposito" in estado_n:
+        return "default"
+    if "pedido" in estado_n:
+        return "warning"
+    return "muted"
+
+
+def color_estado_orden(estado):
+    estado_n = normalizar_texto(estado)
+    if "cancel" in estado_n:
+        return "#dc2626"
+    if "entregado" in estado_n:
+        return "#16a34a"
+    if "parcial" in estado_n:
+        return "#d97706"
+    if "pendiente" in estado_n:
+        return "#1d4ed8"
+    if "deposito" in estado_n:
+        return "#0f766e"
+    if "pedido" in estado_n:
+        return "#f59e0b"
+    return "#94a3b8"
+
+
+def card_event_once(resultado, card_key, action=None):
+    if not isinstance(resultado, dict):
+        return False
+    if resultado.get("card_key") != card_key:
+        return False
+    if action and resultado.get("action") != action:
+        return False
+    event_id = resultado.get("event_id")
+    if not event_id:
+        return False
+    vistos = st.session_state.setdefault("_ordenes_card_eventos_vistos", [])
+    if event_id in vistos:
+        return False
+    vistos.append(event_id)
+    st.session_state["_ordenes_card_eventos_vistos"] = vistos[-100:]
+    return True
+
+
+def filas_materiales_read(materiales):
+    return [
+        {
+            "id": idx,
+            "item_id": limpiar(m.get("Material")),
+            "item_label": limpiar(m.get("Material")),
+            "quantity": limpiar(m.get("cantidad")),
+        }
+        for idx, m in enumerate(materiales or [])
+        if limpiar(m.get("Material"))
+    ]
+
+
+def catalogo_materiales_operativo():
+    opciones, mapa = opciones_materiales_base()
+    catalogo = []
+    for etiqueta in opciones:
+        material = limpiar(mapa.get(etiqueta, etiqueta))
+        if not material:
+            continue
+        partes = [limpiar(p) for p in etiqueta.split(" - ")]
+        unidad = partes[-1] if len(partes) >= 2 else ""
+        catalogo.append({"id": material, "label": material, "unit": unidad})
+    return catalogo
+
+
+def ordenes_v2_css():
+    st.markdown(
+        """
+        <style>
+        .ord-v2-header-title {
+            color: #0f2742;
+            font-size: 25px;
+            font-weight: 850;
+            line-height: 1.15;
+            margin: 0 0 2px;
+        }
+        .ord-v2-header-subtitle {
+            color: #64748b;
+            font-size: 13px;
+            font-weight: 650;
+            margin: 0 0 10px;
+        }
+        .ord-v2-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            gap: 8px;
+            margin: 8px 0 10px;
+        }
+        .ord-v2-kpi {
+            background: #ffffff;
+            border: 1px solid #dbe7ee;
+            border-left: 4px solid #006b68;
+            border-radius: 10px;
+            padding: 7px 9px;
+            min-height: 48px;
+            box-shadow: 0 1px 6px rgba(15, 23, 42, 0.035);
+        }
+        .ord-v2-kpi-label {
+            color: #64748b;
+            font-size: 10px;
+            font-weight: 850;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+        }
+        .ord-v2-kpi-value {
+            color: #0f2742;
+            font-size: 19px;
+            font-weight: 850;
+            line-height: 1.05;
+            margin-top: 3px;
+        }
+        div[class*="st-key-ord_v2_filtros"] [data-testid="stVerticalBlockBorderWrapper"],
+        div[class*="st-key-ord_v2_detail_panel"] [data-testid="stVerticalBlockBorderWrapper"] {
+            background: #ffffff !important;
+            border-color: #dbe7ee !important;
+            border-radius: 13px !important;
+            padding: 11px 12px !important;
+            box-shadow: 0 1px 7px rgba(15, 23, 42, 0.035) !important;
+        }
+        div[class*="st-key-ord_v2_filtros"] label,
+        div[class*="st-key-ord_v2_detail_panel"] label {
+            color: #475569 !important;
+            font-size: 12px !important;
+            font-weight: 700 !important;
+            margin-bottom: 2px !important;
+        }
+        div[class*="st-key-ord_v2_filtros"] input,
+        div[class*="st-key-ord_v2_filtros"] [data-baseweb="select"] > div,
+        div[class*="st-key-ord_v2_detail_panel"] input,
+        div[class*="st-key-ord_v2_detail_panel"] textarea,
+        div[class*="st-key-ord_v2_detail_panel"] [data-baseweb="select"] > div {
+            background: #f8fafc !important;
+            border-color: #dbe7ee !important;
+            font-size: 13px !important;
+        }
+        div[class*="st-key-ord_v2_detail_panel"] [data-testid="stFormSubmitButton"] button {
+            min-height: 36px !important;
+            height: 36px !important;
+            border-radius: 10px !important;
+            font-size: 13px !important;
+            font-weight: 750 !important;
+            box-shadow: none !important;
+        }
+        div[class*="st-key-ord_v2_detail_panel"] [data-testid="stFormSubmitButton"] button[kind="primary"],
+        div[class*="st-key-ord_v2_detail_panel"] button[kind="primary"] {
+            background: #006b68 !important;
+            border-color: #006b68 !important;
+            color: #ffffff !important;
+        }
+        div[class*="st-key-ord_v2_detail_panel"] [data-testid="stFormSubmitButton"] button[kind="primary"]:hover,
+        div[class*="st-key-ord_v2_detail_panel"] button[kind="primary"]:hover {
+            background: #004f4c !important;
+            border-color: #004f4c !important;
+        }
+        div[class*="st-key-ord_v2_del_"] button {
+            background: #fff1f2 !important;
+            border-color: #fecdd3 !important;
+            color: #be123c !important;
+            font-weight: 800 !important;
+            box-shadow: none !important;
+        }
+        div[class*="st-key-ord_v2_del_"] button:hover {
+            background: #ffe4e6 !important;
+            border-color: #fb7185 !important;
+            color: #9f1239 !important;
+        }
+        .ord-v2-section-title {
+            color: #0f2742;
+            font-size: 18px;
+            font-weight: 850;
+            margin: 2px 0 2px;
+        }
+        .ord-v2-section-caption {
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 650;
+            margin: 0 0 8px;
+        }
+        .ord-v2-field-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 8px;
+            margin: 8px 0;
+        }
+        .ord-v2-field {
+            background: #f8fafc;
+            border: 1px solid #dbe7ee;
+            border-radius: 10px;
+            padding: 8px 9px;
+        }
+        .ord-v2-field-label {
+            color: #64748b;
+            font-size: 10px;
+            font-weight: 850;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+            margin-bottom: 3px;
+        }
+        .ord-v2-field-value {
+            color: #0f2742;
+            font-size: 13px;
+            font-weight: 750;
+            overflow-wrap: anywhere;
+        }
+        .ord-v2-textbox {
+            background: #f8fafc;
+            border: 1px solid #dbe7ee;
+            border-radius: 10px;
+            color: #0f2742;
+            font-size: 13px;
+            line-height: 1.35;
+            padding: 9px 10px;
+            margin: 8px 0 10px;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+        .ord-v2-subblock {
+            border-top: 1px solid #e2e8f0;
+            margin-top: 12px;
+            padding-top: 10px;
+        }
+        .ord-v2-subtitle {
+            color: #0f2742;
+            font-size: 15px;
+            font-weight: 850;
+            margin: 0 0 3px;
+        }
+        .ord-v2-subcaption {
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 650;
+            margin: 0 0 8px;
+        }
+        .ord-v2-empty {
+            background: #ffffff;
+            border: 1px dashed #cbd5e1;
+            border-radius: 12px;
+            color: #64748b;
+            font-size: 13px;
+            font-weight: 700;
+            padding: 14px;
+        }
+        @media (max-width: 900px) {
+            .ord-v2-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .ord-v2-field-grid { grid-template-columns: 1fr; }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_kpis_ordenes(ordenes):
+    def cuenta(pred):
+        return sum(1 for o in ordenes if pred(limpiar(o.get("estado"))))
+
+    kpis = [
+        ("Pedidos", cuenta(lambda e: e in {"Pedido entrega", "Pedido retiro", "Pedido"})),
+        ("Programadas", cuenta(lambda e: e in {"Pendiente de entrega", "Pendiente de retiro"})),
+        ("En deposito", cuenta(lambda e: "deposito" in e.lower())),
+        ("Entregadas", cuenta(lambda e: e == "Entregado")),
+        ("Parciales", cuenta(lambda e: "parcial" in e.lower())),
+        ("Canceladas", cuenta(lambda e: e in {"Cancelado", "Cerrado"})),
+    ]
+    html = '<div class="ord-v2-kpi-grid">'
+    for label, value in kpis:
+        html += (
+            '<div class="ord-v2-kpi">'
+            f'<div class="ord-v2-kpi-label">{escape(label)}</div>'
+            f'<div class="ord-v2-kpi-value">{value}</div>'
+            '</div>'
+        )
+    html += "</div>"
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def aplicar_filtros_ordenes_v2(ordenes):
+    with st.container(border=True, key="ord_v2_filtros"):
+        c1, c2, c3, c4 = st.columns([2.0, 1.2, 1.2, 1.2])
+        with c1:
+            q = st.text_input("Busqueda libre", placeholder="N orden, expediente, apellido, barrio...", key="ord_v2_q")
+        with c2:
+            estados = sorted({limpiar(o.get("estado")) for o in ordenes if limpiar(o.get("estado"))})
+            f_estado = st.multiselect("Estado", estados, placeholder="Todos", key="ord_v2_estado")
+        with c3:
+            origenes = sorted({limpiar(o.get("origen")) for o in ordenes if limpiar(o.get("origen"))})
+            f_origen = st.multiselect("Origen", origenes, placeholder="Todos", key="ord_v2_origen")
+        with c4:
+            prioridades = sorted({limpiar(o.get("prioridad_demanda")) for o in ordenes if limpiar(o.get("prioridad_demanda"))})
+            f_prioridad = st.multiselect("Prioridad", prioridades, placeholder="Todas", key="ord_v2_prioridad")
+
+    qn = limpiar(q).lower()
+    filtradas = []
+    for orden in ordenes:
+        if f_estado and limpiar(orden.get("estado")) not in f_estado:
+            continue
+        if f_origen and limpiar(orden.get("origen")) not in f_origen:
+            continue
+        if f_prioridad and limpiar(orden.get("prioridad_demanda")) not in f_prioridad:
+            continue
+        if qn:
+            valores = [
+                orden.get("n_orden"),
+                orden.get("id_demanda"),
+                orden.get("expediente"),
+                orden.get("apellido"),
+                orden.get("nombre"),
+                orden.get("dni"),
+                orden.get("domicilio"),
+                orden.get("barrio"),
+                orden.get("instrucciones_tarea"),
+            ]
+            if not any(qn in limpiar(v).lower() for v in valores):
+                continue
+        filtradas.append(orden)
+    return filtradas
+
+
+def ordenes_v2_tab():
+    ordenes_v2_css()
+    st.markdown('<div class="ord-v2-header-title">Ordenes</div>', unsafe_allow_html=True)
+    st.markdown('<div class="ord-v2-header-subtitle">Consulta, seguimiento y gestion de ordenes de materiales.</div>', unsafe_allow_html=True)
+
     try:
         ordenes = listar_ordenes_con_demanda(incluir_cerradas=True)
     except Exception as error:
@@ -241,125 +441,187 @@ def tab_seguimiento():
     if not ordenes:
         st.info("No hay ordenes cargadas.")
         return
-    df = pd.DataFrame(ordenes)
-    with st.expander("Filtros", expanded=False):
-        q = st.text_input("Buscar", placeholder="N orden, expte, apellido, nombre...")
-        c1, c2 = st.columns(2)
-        with c1:
-            f_estado = st.multiselect("Estado", sorted({limpiar(x) for x in df["estado"].dropna()}))
-        with c2:
-            f_origen = st.multiselect("Origen", sorted({limpiar(x) for x in df["origen"].dropna()}))
 
-    filtrado = df.copy()
-    if f_estado:
-        filtrado = filtrado[filtrado["estado"].fillna("").astype(str).isin(f_estado)]
-    if f_origen:
-        filtrado = filtrado[filtrado["origen"].fillna("").astype(str).isin(f_origen)]
-    q = limpiar(q).lower()
-    if q:
-        cols = [c for c in ["n_orden", "id_demanda", "expediente", "apellido", "nombre", "instrucciones_tarea"] if c in filtrado.columns]
-        mask = filtrado[cols].fillna("").astype(str).apply(lambda row: any(q in v.lower() for v in row), axis=1)
-        filtrado = filtrado[mask]
-    if filtrado.empty:
-        st.info("Sin resultados con esos filtros.")
-        return
+    render_kpis_ordenes(ordenes)
+    filtradas = aplicar_filtros_ordenes_v2(ordenes)
 
-    vista = filtrado[["n_orden", "fecha_emision", "estado", "id_demanda", "expediente", "apellido", "nombre", "origen"]].copy()
-    st.dataframe(vista, hide_index=True, use_container_width=True, height=280)
-    ids = [int(x) for x in vista["n_orden"].tolist()]
-    n_sel = st.selectbox("Seleccionar orden", ids)
-    orden = next((o for o in ordenes if o.get("n_orden") == n_sel), None)
-    if not orden:
-        return
-    demanda = orden.get("demanda") or {}
+    col_list, col_detail = st.columns([0.45, 0.55])
+    with col_list:
+        st.markdown('<div class="ord-v2-section-title">Listado de ordenes</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="ord-v2-section-caption">{len(filtradas)} ordenes segun filtros aplicados.</div>', unsafe_allow_html=True)
+        if not filtradas:
+            st.markdown('<div class="ord-v2-empty">Sin resultados con esos filtros.</div>', unsafe_allow_html=True)
+        ordenes_activas = [o for o in filtradas if limpiar(o.get("estado")) not in {"Entregado", "Cancelado", "Cerrado"}]
+        ordenes_archivadas = [o for o in filtradas if limpiar(o.get("estado")) in {"Entregado", "Cancelado", "Cerrado"}]
 
-    st.divider()
-    st.markdown(f"### Orden seleccionada N° {n_sel}")
-    with st.container(border=True):
-        st.write(f"Estado: {texto(orden.get('estado'))} | Emision: {fecha_visible(orden.get('fecha_emision'))} | Entrega: {fecha_visible(orden.get('fecha_entrega'))}")
-        st.write(f"Expte: {texto(demanda.get('expediente'))} | Beneficiario: {texto(demanda.get('apellido'))}, {texto(demanda.get('nombre'))}")
-        st.write(f"Domicilio: {texto(demanda.get('domicilio'))} - {texto(demanda.get('barrio'))} | Contacto: {texto(demanda.get('contacto'))}")
-        st.write(f"Origen: {texto(orden.get('origen'))} | Prioridad: {texto(demanda.get('prioridad'))} | Accion: {texto(demanda.get('accion'))}")
-        st.caption(f"Tarea: {texto(orden.get('instrucciones_tarea'))}")
+        def render_card_orden_lista(orden, sufijo=""):
+            n_orden = orden.get("n_orden")
+            ck = f"orden_v2_{sufijo}{n_orden}"
+            selected = st.session_state.get("orden_v2_sel") == n_orden
+            accion = operational_card(
+                title=f"Orden N° {texto(n_orden)} · Expte. {sin_dato(orden.get('expediente'))}",
+                subtitle=f"{nombre_persona_orden(orden)} · {sin_dato(orden.get('domicilio'))} - {sin_dato(orden.get('barrio'))}",
+                status=sin_dato(orden.get("estado")),
+                priority=limpiar(orden.get("prioridad_demanda")) or None,
+                meta=[
+                    f"Emision: {fecha_visible(orden.get('fecha_emision'))}",
+                    f"Origen: {sin_dato(orden.get('origen'))}",
+                ],
+                description=limpiar(orden.get("instrucciones_tarea")),
+                footer=f"Demanda ID: {sin_dato(orden.get('id_demanda'))}",
+                variant=estado_variante_orden(orden.get("estado")),
+                accent_color=color_estado_orden(orden.get("estado")),
+                clickable=True,
+                selected=selected,
+                card_key=ck,
+                key=f"{ck}_card",
+            )
+            if card_event_once(accion, ck, "card_click"):
+                st.session_state["orden_v2_sel"] = n_orden
+                st.rerun()
 
-    st.markdown("#### Materiales asociados")
-    try:
-        mats = listar_materiales_por_orden(n_sel)
-    except Exception as error:
-        mostrar_error_supabase(error)
-        mats = []
-    if mats:
-        st.dataframe(pd.DataFrame(mats)[["Material", "cantidad"]], hide_index=True, use_container_width=True, height=200)
-    else:
-        st.info("Esta orden no tiene materiales asociados.")
-    with st.expander("Agregar materiales", expanded=False):
-        nuevos = editor_materiales(f"orden_{n_sel}")
-        if st.button("Guardar materiales nuevos", key=f"save_mats_{n_sel}", use_container_width=True):
-            if not nuevos:
-                st.warning("No hay materiales para guardar.")
-            else:
+        for orden in ordenes_activas:
+            render_card_orden_lista(orden)
+
+        if ordenes_archivadas:
+            with st.expander(f"Entregadas / canceladas ({len(ordenes_archivadas)})", expanded=False):
+                for orden in ordenes_archivadas:
+                    render_card_orden_lista(orden, sufijo="arch_")
+
+    with col_detail:
+        st.markdown('<div class="ord-v2-section-title">Orden seleccionada</div>', unsafe_allow_html=True)
+        n_sel = st.session_state.get("orden_v2_sel")
+        orden = next((o for o in ordenes if o.get("n_orden") == n_sel), None) if n_sel else None
+        if not orden:
+            st.markdown('<div class="ord-v2-empty">Selecciona una orden del listado para ver detalle y acciones.</div>', unsafe_allow_html=True)
+            return
+
+        demanda = orden.get("demanda") or {}
+        with st.container(border=True, key=f"ord_v2_detail_panel_{n_sel}"):
+            operational_card(
+                title=f"Orden N° {texto(n_sel)}",
+                subtitle=f"{nombre_persona_orden(orden)} · Expte. {sin_dato(orden.get('expediente'))}",
+                status=sin_dato(orden.get("estado")),
+                priority=limpiar(demanda.get("prioridad")) or None,
+                meta=[
+                    f"Origen: {sin_dato(orden.get('origen'))}",
+                    f"Accion: {sin_dato(demanda.get('accion'))}",
+                    f"Responsable: {sin_dato(demanda.get('responsable'))}",
+                    f"Emision: {fecha_visible(orden.get('fecha_emision'))}",
+                    f"Entrega: {fecha_visible(orden.get('fecha_entrega'))}",
+                ],
+                description=limpiar(orden.get("instrucciones_tarea")),
+                footer=f"Domicilio: {sin_dato(demanda.get('domicilio'))} - {sin_dato(demanda.get('barrio'))}",
+                variant=estado_variante_orden(orden.get("estado")),
+                accent_color=color_estado_orden(orden.get("estado")),
+                selected=True,
+                card_key=f"orden_v2_detail_{n_sel}",
+                key=f"orden_v2_detail_card_{n_sel}",
+            )
+
+            st.markdown(
+                f"""
+                <div class="ord-v2-field-grid">
+                    <div class="ord-v2-field"><div class="ord-v2-field-label">ID demanda</div><div class="ord-v2-field-value">{escape(sin_dato(orden.get('id_demanda')))}</div></div>
+                    <div class="ord-v2-field"><div class="ord-v2-field-label">DNI</div><div class="ord-v2-field-value">{escape(sin_dato(demanda.get('dni')))}</div></div>
+                    <div class="ord-v2-field"><div class="ord-v2-field-label">Contacto</div><div class="ord-v2-field-value">{escape(sin_dato(demanda.get('contacto')))}</div></div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            historial = limpiar(orden.get("historial"))
+            with st.expander("Historial", expanded=False):
+                st.write(historial or "Sin historial registrado.")
+
+            st.markdown(
+                """
+                <div class="ord-v2-subblock">
+                    <div class="ord-v2-subtitle">Editar orden</div>
+                    <div class="ord-v2-subcaption">Actualiza estado, instruccion y listado de materiales.</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            estado_actual = orden.get("estado")
+            estado_idx = ESTADOS_ORDEN.index(estado_actual) if estado_actual in ESTADOS_ORDEN else 0
+            nuevo_estado = st.selectbox("Estado", ESTADOS_ORDEN, index=estado_idx, key=f"ord_v2_estado_{n_sel}")
+            instrucciones_edit = st.text_area(
+                "Instruccion",
+                value=texto(orden.get("instrucciones_tarea")),
+                height=92,
+                key=f"ord_v2_instr_{n_sel}",
+            )
+
+            try:
+                materiales = listar_materiales_por_orden(n_sel)
+            except Exception as error:
+                mostrar_error_supabase(error)
+                materiales = []
+            resultado_mats = operational_list_editor(
+                title="Materiales de la orden",
+                rows=filas_materiales_read(materiales),
+                catalog=catalogo_materiales_operativo(),
+                help_text="Edite cantidades, agregue o quite materiales. El boton actualiza la orden completa.",
+                add_label="Agregar material",
+                save_label="Actualizar orden",
+                item_label="Material",
+                mode="build",
+                show_unit=True,
+                allow_delete=True,
+                embedded=True,
+                key=f"ord_v2_edit_materiales_{n_sel}",
+            )
+            if isinstance(resultado_mats, dict) and resultado_mats.get("action") == "save":
+                filas_editor = resultado_mats.get("rows") or []
+                nuevos = []
+                for row in filas_editor:
+                    if row.get("deleted"):
+                        continue
+                    material = limpiar(row.get("item_label") or row.get("item_id") or row.get("Material"))
+                    cantidad = limpiar(row.get("quantity") or row.get("cantidad"))
+                    if material:
+                        nuevos.append({"Material": material, "cantidad": cantidad})
                 try:
-                    crear_materiales_orden(n_sel, nuevos)
-                    st.session_state[key_tmp(f"orden_{n_sel}")] = []
+                    actualizar_orden_detalle(n_sel, nuevo_estado, instrucciones_edit)
+                    eliminar_materiales_por_orden(n_sel)
+                    if nuevos:
+                        crear_materiales_orden(n_sel, nuevos)
                 except Exception as error:
                     mostrar_error_supabase(error)
                 else:
-                    st.success("Materiales agregados.")
+                    st.success("Orden actualizada.")
                     st.rerun()
 
-    c1, c2 = st.columns(2)
-    with c1:
-        nuevo_estado = st.selectbox("Estado", ESTADOS_ORDEN, index=ESTADOS_ORDEN.index(orden.get("estado")) if orden.get("estado") in ESTADOS_ORDEN else 0)
-        fecha_txt = st.text_input("Fecha entrega (DD/MM/AA)", value=fecha_visible(orden.get("fecha_entrega"))[:8] if fecha_visible(orden.get("fecha_entrega")) != "-" else "")
-    with c2:
-        comentario = st.text_area("Comentario para historial", height=90)
+            try:
+                datos_pdf = obtener_datos_pdf_orden(n_sel)
+                if datos_pdf:
+                    pdf = generar_pdf_orden(datos_pdf["orden"], datos_pdf["demanda"], datos_pdf["materiales"])
+                    st.download_button(
+                        "Descargar orden PDF",
+                        data=pdf,
+                        file_name=nombre_pdf(datos_pdf["orden"], datos_pdf["demanda"]),
+                        mime="application/pdf",
+                        use_container_width=True,
+                    )
+            except Exception as error:
+                mostrar_error_supabase(error)
 
-    if st.button("Actualizar orden", type="primary", use_container_width=True):
-        fecha_iso = parsear_fecha_ddmmaa(fecha_txt) if limpiar(fecha_txt) else None
-        if limpiar(fecha_txt) and not fecha_iso:
-            st.warning("Fecha invalida. Usa DD/MM/AA.")
-            return
-        try:
-            actualizar_orden_material(n_sel, nuevo_estado, comentario, fecha_entrega=fecha_iso)
-        except Exception as error:
-            mostrar_error_supabase(error)
-            return
-        st.success("Orden actualizada.")
-        st.rerun()
-
-    try:
-        datos_pdf = obtener_datos_pdf_orden(n_sel)
-        if datos_pdf:
-            pdf = generar_pdf_orden(datos_pdf["orden"], datos_pdf["demanda"], datos_pdf["materiales"])
-            st.download_button(
-                "Descargar orden PDF",
-                data=pdf,
-                file_name=nombre_pdf(datos_pdf["orden"], datos_pdf["demanda"]),
-                mime="application/pdf",
-                use_container_width=True,
-            )
-    except Exception as error:
-        mostrar_error_supabase(error)
-
-    st.divider()
-    st.markdown("#### Zona de peligro")
-    check = st.checkbox(f"Confirmo eliminar la orden {n_sel}")
-    if st.button("Eliminar orden", disabled=not check, use_container_width=True):
-        try:
-            eliminar_materiales_por_orden(n_sel)
-            eliminar_orden_material(n_sel)
-        except Exception as error:
-            mostrar_error_supabase(error)
-            return
-        st.success("Orden eliminada.")
-        st.rerun()
+            with st.expander("Zona de peligro", expanded=False):
+                check = st.checkbox(f"Confirmo eliminar la orden {n_sel}", key=f"ord_v2_del_check_{n_sel}")
+                if st.button("Eliminar orden", disabled=not check, use_container_width=True, key=f"ord_v2_del_{n_sel}"):
+                    try:
+                        eliminar_materiales_por_orden(n_sel)
+                        eliminar_orden_material(n_sel)
+                    except Exception as error:
+                        mostrar_error_supabase(error)
+                    else:
+                        st.success("Orden eliminada.")
+                        st.session_state.pop("orden_v2_sel", None)
+                        st.rerun()
 
 
-st.set_page_config(page_title="Ordenes", layout="wide")
+require_login(["admin", "tecnico"])
 st.title("Ordenes")
 
-tab1, tab2 = st.tabs(["Nueva orden", "Seguimiento de ordenes"])
-with tab1:
-    tab_nueva()
-with tab2:
-    tab_seguimiento()
+ordenes_v2_tab()

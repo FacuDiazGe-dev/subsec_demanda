@@ -162,9 +162,34 @@ def generar_pdf_orden(orden, demanda, materiales):
     else:
         elementos.append(Paragraph("No se registran materiales asociados a esta orden.", normal))
 
+    observaciones = Table(
+        [
+            [Paragraph("<b>Observaciones:</b>", normal)],
+            [Paragraph("&nbsp;", normal)],
+            [Paragraph("&nbsp;", normal)],
+        ],
+        colWidths=[17 * cm],
+        rowHeights=[0.65 * cm, 0.75 * cm, 0.75 * cm],
+    )
+    observaciones.setStyle(
+        TableStyle(
+            [
+                ("BOX", (0, 0), (-1, -1), 0.75, colors.grey),
+                ("LINEBELOW", (0, 0), (-1, 0), 0.5, colors.lightgrey),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ]
+        )
+    )
+
     elementos.extend(
         [
-            Spacer(1, 0.4 * cm),
+            Spacer(1, 0.35 * cm),
+            observaciones,
+            Spacer(1, 0.35 * cm),
             linea(),
             Spacer(1, 0.3 * cm),
             Paragraph("Autorizado / solicitado por:", seccion),
