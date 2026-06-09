@@ -996,22 +996,22 @@ def render_kpi_demanda_v2(label, value, tone="green"):
 
 def kpi_operativo_html(titulo, izquierda_label, izquierda_valor, derecha_label, derecha_valor, detalle=None, tone="green"):
     detalle_html = f'<div class="dem-v2-kpi-detail">{html.escape(detalle)}</div>' if detalle else ""
-    return f"""
-        <div class="dem-v2-kpi dem-v2-kpi-{tone}">
-            <div class="dem-v2-kpi-label">{html.escape(titulo)}</div>
-            <div class="dem-v2-kpi-split">
-                <div>
-                    <div class="dem-v2-kpi-metric-label">{html.escape(izquierda_label)}</div>
-                    <div class="dem-v2-kpi-metric-value">{izquierda_valor}</div>
-                </div>
-                <div>
-                    <div class="dem-v2-kpi-metric-label">{html.escape(derecha_label)}</div>
-                    <div class="dem-v2-kpi-metric-value">{derecha_valor}</div>
-                </div>
-            </div>
-            {detalle_html}
-        </div>
-        """
+    return (
+        f'<div class="dem-v2-kpi dem-v2-kpi-{tone}">'
+        f'<div class="dem-v2-kpi-label">{html.escape(titulo)}</div>'
+        '<div class="dem-v2-kpi-split">'
+        '<div>'
+        f'<div class="dem-v2-kpi-metric-label">{html.escape(izquierda_label)}</div>'
+        f'<div class="dem-v2-kpi-metric-value">{izquierda_valor}</div>'
+        '</div>'
+        '<div>'
+        f'<div class="dem-v2-kpi-metric-label">{html.escape(derecha_label)}</div>'
+        f'<div class="dem-v2-kpi-metric-value">{derecha_valor}</div>'
+        '</div>'
+        '</div>'
+        f'{detalle_html}'
+        '</div>'
+    )
 
 
 def render_kpi_operativo_v2(titulo, izquierda_label, izquierda_valor, derecha_label, derecha_valor, detalle=None, tone="green"):
@@ -1054,7 +1054,11 @@ def render_demandas_kpis_v2(df):
             tone="amber",
         ),
     ]
-    st.markdown(f'<div class="dem-v2-kpi-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
+    kpi_html = f'<div class="dem-v2-kpi-grid">{"".join(cards)}</div>'
+    if hasattr(st, "html"):
+        st.html(kpi_html)
+    else:
+        st.markdown(kpi_html, unsafe_allow_html=True)
     if sin_resp:
         st.markdown(f'<div class="dem-v2-kpi-chip">! {sin_resp} sin responsable</div>', unsafe_allow_html=True)
 
