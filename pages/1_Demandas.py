@@ -1,6 +1,7 @@
 from datetime import date
 import html
 import re
+import unicodedata
 
 import pandas as pd
 import streamlit as st
@@ -22,6 +23,8 @@ from services.demandas_service import (
     listar_demandas_pendientes,
 )
 from services.sociohabitacional_service import obtener_estados_por_accion
+from services.obras_service import listar_obras_con_demanda
+from services.ordenes_service import listar_ordenes_con_demanda
 from services.expedientes_service import (
     actualizar_expediente_desde_demanda,
     buscar_expediente,
@@ -158,6 +161,12 @@ def valor_visible(valor, fallback="Sin dato"):
     if not valor or valor.lower() in {"nan", "none", "null"}:
         return fallback
     return valor
+
+
+def normalizar_texto(valor):
+    valor = limpiar(valor).lower()
+    valor = unicodedata.normalize("NFKD", valor)
+    return "".join(ch for ch in valor if not unicodedata.combining(ch))
 
 def fecha_corta(v):
     v = limpiar(v)
@@ -568,9 +577,49 @@ def cargar_estilos_demandas_v2():
             line-height: 1;
             margin-top: 3px;
         }
+        .dem-v2-kpi-split {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+            margin-top: 5px;
+        }
+        .dem-v2-kpi-metric-label {
+            color: #64748b;
+            font-size: 9px;
+            font-weight: 850;
+            line-height: 1.1;
+            text-transform: uppercase;
+        }
+        .dem-v2-kpi-metric-value {
+            color: #0f2742;
+            font-size: 18px;
+            font-weight: 850;
+            line-height: 1.05;
+            margin-top: 2px;
+        }
+        .dem-v2-kpi-detail {
+            color: #475569;
+            font-size: 11px;
+            font-weight: 750;
+            margin-top: 6px;
+            white-space: nowrap;
+        }
         .dem-v2-kpi-blue { border-left-color: #1d4ed8; }
         .dem-v2-kpi-amber { border-left-color: #f59e0b; }
         .dem-v2-kpi-red { border-left-color: #dc2626; }
+        .dem-v2-kpi-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #fff7ed;
+            border: 1px solid #fed7aa;
+            border-radius: 999px;
+            color: #9a3412;
+            font-size: 12px;
+            font-weight: 800;
+            padding: 5px 10px;
+            margin: 2px 0 10px;
+        }
         .dem-v2-kpi-row {
             margin-bottom: 10px;
         }
@@ -825,6 +874,100 @@ def cargar_estilos_demandas_v2():
     )
 
 
+def contar_sin_responsable(df):
+    if df.empty or "responsable" not in df.columns:
+        return 0
+    estados_cierre = {"cerrado", "cerrada", "finalizada", "cancelada"}
+    df_activo = df.copy()
+    if "estado" in df_activo.columns:
+        df_activo = df_activo[~df_activo["estado"].fillna("").map(normalizar_texto).isin(estados_cierre)]
+    return df_activo[df_activo["responsable"].fillna("").astype(str).str.strip() == ""].shape[0]
+
+
+def obtener_obras_para_kpi():
+    try:
+        return listar_obras_con_demanda()
+    except Exception:
+        return []
+
+
+def obtener_ordenes_para_kpi():
+    try:
+        return listar_ordenes_con_demanda(incluir_cerradas=False)
+    except Exception:
+        return []
+
+
+def calcular_kpis_obras(df):
+    obras = obtener_obras_para_kpi()
+    activas = [o for o in obras if normalizar_texto(o.get("estado_obra")) == "en ejecucion"]
+    ha = [
+        o for o in activas
+        if "havita" in normalizar_texto(o.get("modalidad_ejecucion"))
+        or "havita" in normalizar_texto(o.get("tipo_obra_programa"))
+        or "cuadrilla havita" in normalizar_texto(o.get("modalidad_ejecucion"))
+    ]
+    mo = [
+        o for o in activas
+        if "mano de obra propia" in normalizar_texto(o.get("modalidad_ejecucion"))
+        or normalizar_texto(o.get("modalidad_ejecucion")) in {"mo", "mo propia"}
+    ]
+
+    pendientes_ids = set()
+    estados_excluidos = {"en ejecucion", "ejecutada", "finalizada", "cerrada", "cerrado", "cancelada"}
+    if not df.empty and "accion" in df.columns:
+        acciones_obra = df["accion"].fillna("").map(normalizar_texto).isin({"obra", "emergencia"})
+        if "estado" in df.columns:
+            demandas_pendientes = df[acciones_obra & ~df["estado"].fillna("").map(normalizar_texto).isin(estados_excluidos)]
+        else:
+            demandas_pendientes = df[acciones_obra]
+        for _, demanda in demandas_pendientes.iterrows():
+            pendientes_ids.add(f"d:{demanda.get('id_demanda', len(pendientes_ids))}")
+
+    for obra in obras:
+        estado_obra = normalizar_texto(obra.get("estado_obra"))
+        if estado_obra and estado_obra not in estados_excluidos:
+            id_demanda = obra.get("id_demanda")
+            pendientes_ids.add(f"d:{id_demanda}" if id_demanda is not None else f"o:{obra.get('id_obra')}")
+
+    return {"activas": len(activas), "pendientes": len(pendientes_ids), "ha": len(ha), "mo": len(mo)}
+
+
+def calcular_kpis_visitas(df):
+    if df.empty or "accion" not in df.columns:
+        return {"para_visita": 0, "programadas": 0}
+    visitas = df[df["accion"].fillna("").map(normalizar_texto) == "visitar"]
+    estados = visitas["estado"].fillna("").map(normalizar_texto) if "estado" in visitas.columns else pd.Series([], dtype=str)
+    estados_para_visita = {"pendiente", "ingresada", "para visita", "sin programar"}
+    estados_programadas = {"visita programada", "programada", "para visita con fecha"}
+    return {
+        "para_visita": int(estados.isin(estados_para_visita).sum()),
+        "programadas": int(estados.isin(estados_programadas).sum()),
+    }
+
+
+def calcular_kpis_ordenes():
+    ordenes = obtener_ordenes_para_kpi()
+    estados_pendientes = {
+        "pedido entrega",
+        "pedido retiro",
+        "pedido",
+        "en deposito",
+        "en deposito parcial",
+        "entrega parcial",
+    }
+    estados_programadas = {"pendiente de entrega", "pendiente de retiro"}
+    pendientes = 0
+    programadas = 0
+    for orden in ordenes:
+        estado = normalizar_texto(orden.get("estado"))
+        if estado in estados_programadas:
+            programadas += 1
+        elif estado in estados_pendientes:
+            pendientes += 1
+    return {"pendientes": pendientes, "programadas": programadas}
+
+
 def render_kpi_demanda_v2(label, value, tone="green"):
     st.markdown(
         f"""
@@ -837,30 +980,68 @@ def render_kpi_demanda_v2(label, value, tone="green"):
     )
 
 
+def render_kpi_operativo_v2(titulo, izquierda_label, izquierda_valor, derecha_label, derecha_valor, detalle=None, tone="green"):
+    detalle_html = f'<div class="dem-v2-kpi-detail">{html.escape(detalle)}</div>' if detalle else ""
+    st.markdown(
+        f"""
+        <div class="dem-v2-kpi dem-v2-kpi-{tone}">
+            <div class="dem-v2-kpi-label">{html.escape(titulo)}</div>
+            <div class="dem-v2-kpi-split">
+                <div>
+                    <div class="dem-v2-kpi-metric-label">{html.escape(izquierda_label)}</div>
+                    <div class="dem-v2-kpi-metric-value">{izquierda_valor}</div>
+                </div>
+                <div>
+                    <div class="dem-v2-kpi-metric-label">{html.escape(derecha_label)}</div>
+                    <div class="dem-v2-kpi-metric-value">{derecha_valor}</div>
+                </div>
+            </div>
+            {detalle_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_demandas_kpis_v2(df):
-    total = len(df)
-    en_gestion = 0
-    if "estado" in df.columns:
-        estados_iniciales = {"Pendiente", "Ingresada", "Cerrado", "Cerrada"}
-        en_gestion = df[~df["estado"].fillna("").isin(estados_iniciales)].shape[0]
-    urgentes = 0
-    if "prioridad" in df.columns:
-        urgentes = df["prioridad"].fillna("").astype(str).str.contains(r"^[12]", regex=True).sum()
-    sin_resp = 0
-    if "responsable" in df.columns:
-        sin_resp = df[df["responsable"].fillna("").astype(str).str.strip() == ""].shape[0]
+    obras = calcular_kpis_obras(df)
+    visitas = calcular_kpis_visitas(df)
+    ordenes = calcular_kpis_ordenes()
+    sin_resp = contar_sin_responsable(df)
 
     st.markdown('<div class="dem-v2-kpi-row">', unsafe_allow_html=True)
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3 = st.columns(3)
     with c1:
-        render_kpi_demanda_v2("Pendientes", total, "green")
+        render_kpi_operativo_v2(
+            "Obras",
+            "Activas",
+            obras["activas"],
+            "Pendientes",
+            obras["pendientes"],
+            detalle=f"HA {obras['ha']} · MO {obras['mo']}",
+            tone="green",
+        )
     with c2:
-        render_kpi_demanda_v2("En gestión", en_gestion, "blue")
+        render_kpi_operativo_v2(
+            "Visitas",
+            "Para visita",
+            visitas["para_visita"],
+            "Programadas",
+            visitas["programadas"],
+            tone="blue",
+        )
     with c3:
-        render_kpi_demanda_v2("Urgentes / prioritarias", urgentes, "amber")
-    with c4:
-        render_kpi_demanda_v2("Sin responsable", sin_resp, "red")
+        render_kpi_operativo_v2(
+            "Órdenes",
+            "Pendientes",
+            ordenes["pendientes"],
+            "Programadas",
+            ordenes["programadas"],
+            tone="amber",
+        )
     st.markdown('</div>', unsafe_allow_html=True)
+    if sin_resp:
+        st.markdown(f'<div class="dem-v2-kpi-chip">! {sin_resp} sin responsable</div>', unsafe_allow_html=True)
 
 
 def compactar_espaciado_operational_cards():
