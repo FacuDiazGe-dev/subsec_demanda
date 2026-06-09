@@ -458,7 +458,7 @@ def tablero_tab():
                 f"Responsable: {txt(o.get('responsable_tecnico')) or '-'}",
             ],
             description=resumen(o.get("descripcion_obra")) or "-",
-            footer=f"Ultima actualizaciÃ³n: {fecha_corta(o.get('ultima_actualizacion_semanal'))}",
+            footer=f"Ultima actualizaci?n: {fecha_corta(o.get('ultima_actualizacion_semanal'))}",
             variant=variant_obra(o.get("estado_obra")),
             accent_color=color_obra_estado(o.get("estado_obra")),
             card_key=f"obra_tablero_{o.get('id_obra')}",
@@ -480,7 +480,7 @@ def tablero_tab():
             status=txt(d.get("accion")) or "Demanda",
             priority=txt(d.get("prioridad")) or None,
             meta=[f"Origen: {txt(d.get('origen')) or '-'}", f"Estado: {txt(d.get('estado')) or '-'}"],
-            description=resumen(d.get("observaciones")) or "Demanda pendiente de validaciÃ³n para crear obra.",
+            description=resumen(d.get("observaciones")) or "Demanda pendiente de validaci?n para crear obra.",
             footer=f"Demanda #{did_demanda}",
             variant="warning",
             accent_color=color_accion_demanda(d.get("accion")),
@@ -563,7 +563,7 @@ def editar_obra_tab():
     if not obra:
         return
     st.divider()
-    st.markdown(f"### Obra NÂ° {oid}")
+    st.markdown(f"### Obra N? {oid}")
     with st.form(f"form_editar_obra_{oid}"):
         c1, c2 = st.columns(2)
         with c1:

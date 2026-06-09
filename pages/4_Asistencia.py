@@ -254,7 +254,7 @@ def render_estado_persona(fecha_jornada, pid, asignaciones):
     ]:
         with col:
             if st.button(
-                f"âœ“ {label}" if estado == valor else label,
+                f"? {label}" if estado == valor else label,
                 key=f"as_estado_{fecha_jornada}_{pid}_{valor}",
                 type="primary" if estado == valor else "secondary",
                 use_container_width=True,

@@ -429,7 +429,7 @@ def color_estado_deposito(estado):
         return "#1d4ed8"
     if "pedido" in estado:
         return "#f59e0b"
-    if "deposito" in estado or "depÃ³sito" in estado:
+    if "deposito" in estado or "dep?sito" in estado:
         return "#64748b"
     if "cancelado" in estado:
         return "#dc2626"
@@ -446,7 +446,7 @@ def variante_estado_deposito(estado):
         return "highlight"
     if "pedido" in estado:
         return "warning"
-    if "deposito" in estado or "depÃ³sito" in estado:
+    if "deposito" in estado or "dep?sito" in estado:
         return "muted"
     return "default"
 
@@ -586,7 +586,7 @@ def card_pedido(orden):
             st.caption(f"Origen: {texto(orden.get('origen'))}")
             st.caption(f"Tarea: {resumen_texto(orden.get('instrucciones_tarea'))}")
         with col_lupa:
-            if st.button("Ã°Å¸â€Â", key=f"dep_btn_lupa_{n_orden}", help="Ver detalle"):
+            if st.button("??", key=f"dep_btn_lupa_{n_orden}", help="Ver detalle"):
                 st.session_state[clave_detalle] = not st.session_state.get(clave_detalle, False)
         if st.session_state.get(clave_detalle, False):
             mostrar_detalle_orden(orden)
@@ -735,7 +735,7 @@ def kpis_pedidos_deposito(ordenes):
     en_deposito = sum(
         1
         for orden in ordenes
-        if limpiar(orden.get("estado")) in {"En deposito", "En depÃ³sito"}
+        if limpiar(orden.get("estado")) in {"En deposito", "En dep?sito"}
     )
     try:
         entregados = len(listar_ordenes_por_estados({"Entregado", "Cerrado"}))
@@ -833,7 +833,7 @@ def consultas_rapidas_deposito():
 
     with st.expander("Entregas parciales", expanded=False):
         parciales = listar_ordenes_por_estados(
-            {"Entregado parcial", "En deposito parcial", "En depÃƒÂ³sito parcial", "Entrega parcial"}
+            {"Entregado parcial", "En deposito parcial", "En depósito parcial", "Entrega parcial"}
         )
         if not parciales:
             st.info("No hay ordenes en entrega parcial.")
@@ -967,7 +967,7 @@ def acciones_programado(orden):
         materiales_idx = materiales_parcialidad_ui(orden, "ent") if parcial else []
         c1, c2 = st.columns(2)
         with c1:
-            if st.button("Ã¢Å“â€œ", key=f"dep_ok_{n_orden}", help="Completado", use_container_width=True):
+            if st.button("?", key=f"dep_ok_{n_orden}", help="Completado", use_container_width=True):
                 marcar_entregado_desde_programados(
                     n_orden,
                     parcial=parcial,
@@ -995,7 +995,7 @@ def acciones_programado(orden):
         materiales_idx = materiales_parcialidad_ui(orden, "ret") if parcial else []
         c1, c2, c3 = st.columns(3)
         with c1:
-            if st.button("Ã¢Å“â€œ", key=f"dep_okr_{n_orden}", help="Completado", use_container_width=True):
+            if st.button("?", key=f"dep_okr_{n_orden}", help="Completado", use_container_width=True):
                 marcar_entregado_desde_programados(
                     n_orden,
                     parcial=parcial,
@@ -1007,7 +1007,7 @@ def acciones_programado(orden):
                     st.success("Retiro completado y orden entregada.")
                 st.rerun()
         with c2:
-            if st.button("Ã°Å¸ÂÂ ", key=f"dep_home_{n_orden}", help="A deposito", use_container_width=True):
+            if st.button("??", key=f"dep_home_{n_orden}", help="A deposito", use_container_width=True):
                 marcar_a_deposito_desde_programados(
                     n_orden,
                     parcial=parcial,

@@ -22,13 +22,17 @@ from services.demandas_service import (
     listar_demandas_pendientes,
 )
 from services.sociohabitacional_service import obtener_estados_por_accion
-from services.expedientes_service import buscar_expediente
+from services.expedientes_service import (
+    actualizar_expediente_desde_demanda,
+    buscar_expediente,
+    sincronizar_demanda_desde_expediente,
+)
 
 
 ORIGENES = [
     "Subdirectora",
-    "Ãrea administrativa",
-    "SubsecretarÃ­a",
+    "Área administrativa",
+    "Subsecretaría",
     "Secretaria",
     "Secretaria de Gobierno",
     "Intendenta",
@@ -53,7 +57,7 @@ PRIORIDADES = [
 ACCIONES = [
     "Visitar",
     "Hacer nota",
-    "ActuaciÃ³n",
+    "Actuación",
     "Obra",
     "Entregar materiales",
     "Informe",
@@ -63,7 +67,7 @@ ACCIONES = [
 ]
 
 TIPOS_MATERIALES = [
-    "GestiÃ³n de stock",
+    "Gestión de stock",
     "Compra para emergencias",
     "Reposicion de deposito",
     "Insumos internos",
@@ -94,9 +98,9 @@ ESTADOS_POR_ACCION = {
         "Completo",
         "Cerrado",
     ],
-    "Hacer nota": ["Pendiente", "Para Hacer", "En elaboraciÃ³n", "Presentado", "Cerrado"],
-    "Actuacion": ["Pendiente", "Para Hacer", "En elaboraciÃ³n", "Presentado", "Cerrado"],
-    "ActuaciÃ³n": ["Pendiente", "Para Hacer", "En elaboraciÃ³n", "Presentado", "Cerrado"],
+    "Hacer nota": ["Pendiente", "Para Hacer", "En elaboración", "Presentado", "Cerrado"],
+    "Actuacion": ["Pendiente", "Para Hacer", "En elaboración", "Presentado", "Cerrado"],
+    "Actuación": ["Pendiente", "Para Hacer", "En elaboración", "Presentado", "Cerrado"],
     "Obra": [
         "Sin acta",
         "Acta compromiso / inicio firmada",
@@ -120,17 +124,17 @@ ESTADOS_POR_ACCION = {
     ],
     "Entregar materiales": [
         "Solicitud recibida",
-        "En gestiÃ³n",
-        "AutorizaciÃ³n recibida",
+        "En gestión",
+        "Autorización recibida",
         "Pendiente de entrega",
         "Entrega programada",
         "Materiales entregados",
         "Firma pendiente",
         "Cerrado",
     ],
-    "Informe": ["Pendiente", "Para Hacer", "En elaboraciÃ³n", "Presentado", "Cerrado"],
-    "Seguimiento": ["Pendiente", "Para Hacer", "En elaboraciÃ³n", "Presentado", "Cerrado"],
-    "Otro": ["Pendiente", "Para Hacer", "En elaboraciÃ³n", "Presentado", "Cerrado"],
+    "Informe": ["Pendiente", "Para Hacer", "En elaboración", "Presentado", "Cerrado"],
+    "Seguimiento": ["Pendiente", "Para Hacer", "En elaboración", "Presentado", "Cerrado"],
+    "Otro": ["Pendiente", "Para Hacer", "En elaboración", "Presentado", "Cerrado"],
 }
 
 
@@ -174,6 +178,15 @@ def parsear_expediente(valor):
     if len(anio) == 2:
         anio = f"20{anio}"
     return numero, anio, f"{numero}/{anio}"
+
+
+def expediente_demanda(demanda):
+    numero = limpiar(demanda.get("expte_numero"))
+    anio = limpiar(demanda.get("expte_anio"))
+    if numero and anio:
+        return numero, anio
+    numero_parseado, anio_parseado, _ = parsear_expediente(demanda.get("expediente"))
+    return numero_parseado, anio_parseado
 
 
 def mostrar_error_supabase(error):
@@ -230,7 +243,7 @@ def cargar_demanda_tab():
     inicializar_carga()
     section_header(
     "Nueva demanda",    
-        "RegistrÃ¡ una solicitud nueva a partir de expediente, pedido recibido y clasificaciÃ³n inicial.",
+        "Registrá una solicitud nueva a partir de expediente, pedido recibido y clasificación inicial.",
     )
 
     st.text_input("Expediente", key="carga_expediente", placeholder="20373/24")
@@ -244,7 +257,7 @@ def cargar_demanda_tab():
 
     col_accion, col_origen, col_responsable = st.columns(3)
     with col_accion:
-        accion = st.selectbox("AcciÃ³n", ACCIONES)
+        accion = st.selectbox("Acción", ACCIONES)
     with col_origen:
         origen = st.selectbox("Origen", ORIGENES, index=0)
     with col_responsable:
@@ -359,7 +372,7 @@ def agregar_al_historial(historial_actual, nueva_accion, cambios):
 
     nueva_accion = limpiar(nueva_accion)
     if nueva_accion:
-        partes.append(f"ActualizaciÃ³n: {nueva_accion}")
+        partes.append(f"Actualización: {nueva_accion}")
     partes.extend(cambios)
 
     if not partes:
@@ -381,7 +394,7 @@ def render_demandas_kpis(df):
     """Muestra los indicadores superiores calculados del DataFrame actual."""
     total = len(df)
     
-    # En gestiÃ³n: distinto de Pendiente, Ingresada, Cerrado
+    # En gestión: distinto de Pendiente, Ingresada, Cerrado
     en_gestion = 0
     if "estado" in df.columns:
         estados_iniciales = {"Pendiente", "Ingresada", "Cerrado", "Cerrada"}
@@ -399,7 +412,7 @@ def render_demandas_kpis(df):
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Pendientes", total)
-    c2.metric("En gestiÃ³n", en_gestion)
+    c2.metric("En gestión", en_gestion)
     c3.metric("Urgentes/Prioritarias", urgentes)
     c4.metric("Sin responsable", sin_resp)
 
@@ -417,7 +430,7 @@ def render_filtros_demandas_compactos(df):
         with c3:
             f_prioridad = st.multiselect("Prioridad", opciones_filtro(df, "prioridad"), placeholder="Prioridad", label_visibility="collapsed")
         with c4:
-            f_accion = st.multiselect("AcciÃ³n", opciones_filtro(df, "accion"), placeholder="AcciÃ³n", label_visibility="collapsed")
+            f_accion = st.multiselect("Acción", opciones_filtro(df, "accion"), placeholder="Acción", label_visibility="collapsed")
         with c5:
             limpiar_f = st.button("Limpiar", help="Limpiar filtros", use_container_width=True)
 
@@ -477,7 +490,7 @@ def color_accion_demanda(accion):
         "Visitar": "#2563EB",
         "Hacer nota": "#7C3AED",
         "Actuacion": "#0F766E",
-        "ActuaciÃ³n": "#0F766E",
+        "Actuación": "#0F766E",
         "Obra": "#D97706",
         "Entregar materiales": "#0284C7",
         "Informe": "#16A34A",
@@ -955,7 +968,7 @@ def render_ficha_demanda_seleccionada(demanda):
         status=texto(demanda.get("estado")) or None,
         priority=texto(demanda.get("prioridad")) or None,
         meta=[
-            texto(demanda.get("accion")) or "Sin acciÃ³n",
+            texto(demanda.get("accion")) or "Sin acción",
             f"Ingreso: {fecha_corta(demanda.get('fecha_ingreso'))}",
         ],
         description=texto(demanda.get("pedido")) or "",
@@ -1035,7 +1048,7 @@ def pendientes_tab():
                 status=texto(demanda_card.get("estado")) or None,
                 priority=texto(demanda_card.get("prioridad")) or None,
                 meta=[
-                    texto(demanda_card.get("accion")) or "Sin acciÃ³n",
+                    texto(demanda_card.get("accion")) or "Sin acción",
                     ubicacion_demanda_card(demanda_card),
                     f"Ingreso: {fecha_corta(demanda_card.get('fecha_ingreso'))}",
                 ],
@@ -1070,7 +1083,7 @@ def pendientes_tab():
 
     st.markdown(f"#### Demanda seleccionada #{did}")
 
-    # Control de modo ediciÃ³n
+    # Control de modo edición
     if "editar_demanda_id" not in st.session_state:
         st.session_state["editar_demanda_id"] = None
 
@@ -1081,7 +1094,7 @@ def pendientes_tab():
     with col_main:
         render_ficha_demanda_seleccionada(demanda)
 
-        # --- MODO EDICIÃ“N: FORMULARIO (WIDGETS) ---
+        # --- MODO EDICIÓN: FORMULARIO (WIDGETS) ---
         if modo_edicion:
             st.divider()
             st.markdown("##### Formulario de edicion")
@@ -1089,7 +1102,7 @@ def pendientes_tab():
             with st.container(border=True):
                 categoria, estados = estados_para_demanda(demanda)
                 
-                # Fila 1: GestiÃ³n
+                # Fila 1: Gestión
                 ce1, ce2, ce3 = st.columns(3)
                 estado_val = ce1.selectbox("Estado", estados, index=estados.index(demanda.get("estado")) if demanda.get("estado") in estados else 0)
                 prioridad_val = ce2.selectbox("Prioridad", PRIORIDADES, index=PRIORIDADES.index(demanda.get("prioridad")) if demanda.get("prioridad") in PRIORIDADES else 2)
@@ -1101,16 +1114,16 @@ def pendientes_tab():
                 nombre_v = ce5.text_input("Nombre", value=texto(demanda.get("nombre")))
                 dni_v = ce6.text_input("DNI", value=texto(demanda.get("dni")))
                 
-                # Fila 3: UbicaciÃ³n
+                # Fila 3: Ubicación
                 ce7, ce8, ce9 = st.columns(3)
                 dom_v = ce7.text_input("Domicilio", value=texto(demanda.get("domicilio")))
                 bar_v = ce8.text_input("Barrio", value=texto(demanda.get("barrio")))
                 con_v = ce9.text_input("Contacto", value=texto(demanda.get("contacto")))
                 
             nueva_acc_v = st.text_area(
-                "Nueva acciÃ³n / actualizaciÃ³n de historial",
+                "Nueva acción / actualización de historial",
                 height=100, 
-                placeholder="EscribÃ­ aquÃ­ el resumen de la gestiÃ³n realizada...",
+                placeholder="Escribí aquí el resumen de la gestión realizada...",
                 key=f"nueva_acc_{did}"
             )
 
@@ -1133,7 +1146,7 @@ def pendientes_tab():
                     "barrio": bar_v.strip() or None, 
                     "contacto": con_v.strip() or None,
                 }
-                # Obtenemos el texto del Ã¡rea de texto usando la clave Ãºnica
+                # Obtenemos el texto del área de texto usando la clave única
                 texto_nueva_accion = st.session_state.get(f"nueva_acc_{did}", "")
                 cambios = detectar_cambios(demanda, nuevos_valores)
                 
@@ -1385,13 +1398,28 @@ def detalle_demanda_panel_v2(demanda):
         )
 
     st.markdown('<div class="dem-v2-actions-inline"></div>', unsafe_allow_html=True)
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     with c1:
         if st.button("Habilitar edición", type="primary", use_container_width=True, key="dem_v2_btn_editar"):
             set_modo_demandas_v2("editar", did)
             st.session_state["editar_demanda_id"] = did
             st.rerun()
     with c2:
+        if st.button("Sincronizar expediente", use_container_width=True, key=f"dem_v2_sync_exp_{did}"):
+            expte_numero, expte_anio = expediente_demanda(demanda)
+            if not expte_numero or not expte_anio:
+                st.warning("La demanda no tiene expediente válido para sincronizar.")
+            else:
+                try:
+                    actualizada = sincronizar_demanda_desde_expediente(did, expte_numero, expte_anio)
+                    if actualizada:
+                        st.toast("Datos sincronizados desde expedientes.")
+                        st.rerun()
+                    else:
+                        st.warning("No se encontró ese expediente en la base general.")
+                except Exception as error:
+                    mostrar_error_supabase(error)
+    with c3:
         with st.expander("Finalizar expediente", expanded=False):
             st.write("Marcar como resuelta y archivar.")
             confirma_cierre = st.checkbox("Confirmo cierre definitivo", key=f"dem_v2_conf_cierre_{did}")
@@ -1459,6 +1487,12 @@ def editar_demanda_panel_v2(demanda):
                 key=f"dem_v2_nueva_acc_{did}",
             )
 
+            actualizar_base_exp = st.checkbox(
+                "Actualizar también la base general de expedientes con estos datos personales",
+                value=False,
+                key=f"dem_v2_sync_base_exp_{did}",
+            )
+
             b1, b2 = st.columns([1, 1])
             with b1:
                 guardar = st.button("Guardar cambios", type="primary", use_container_width=True, key=f"dem_v2_guardar_edit_{did}")
@@ -1495,6 +1529,10 @@ def editar_demanda_panel_v2(demanda):
                 "observaciones": agregar_al_historial(demanda.get("observaciones"), nueva_accion, cambios),
             },
         )
+        if actualizar_base_exp:
+            expte_numero, expte_anio = expediente_demanda(demanda)
+            if expte_numero and expte_anio:
+                actualizar_expediente_desde_demanda(expte_numero, expte_anio, nuevos_valores)
     except Exception as error:
         mostrar_error_supabase(error)
         return

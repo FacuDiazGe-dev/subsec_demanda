@@ -547,27 +547,27 @@ with col_ficha:
         <div class="lab-detail-panel">
             <div class="lab-detail-grid">
                 <div>
-                    <div class="lab-detail-label"><span class="lab-detail-icon">ðŸ›</span>Origen</div>
+                    <div class="lab-detail-label"><span class="lab-detail-icon">#</span>Origen</div>
                     <div class="lab-detail-value">Subdirectora</div>
                 </div>
                 <div>
-                    <div class="lab-detail-label"><span class="lab-detail-icon">ðŸ‘¤</span>Responsable</div>
+                    <div class="lab-detail-label"><span class="lab-detail-icon">@</span>Responsable</div>
                     <div class="lab-detail-value">Guillo</div>
                 </div>
                 <div>
-                    <div class="lab-detail-label"><span class="lab-detail-icon">ðŸªª</span>DNI</div>
+                    <div class="lab-detail-label"><span class="lab-detail-icon">ID</span>DNI</div>
                     <div class="lab-detail-value">23.456.789</div>
                 </div>
                 <div>
-                    <div class="lab-detail-label"><span class="lab-detail-icon">ðŸ </span>Domicilio</div>
+                    <div class="lab-detail-label"><span class="lab-detail-icon">H</span>Domicilio</div>
                     <div class="lab-detail-value">Reconquista 255</div>
                 </div>
                 <div>
-                    <div class="lab-detail-label"><span class="lab-detail-icon">ðŸ¢</span>Barrio</div>
+                    <div class="lab-detail-label"><span class="lab-detail-icon">B</span>Barrio</div>
                     <div class="lab-detail-value">Villa Rosa</div>
                 </div>
                 <div>
-                    <div class="lab-detail-label"><span class="lab-detail-icon">â˜Ž</span>Contacto</div>
+                    <div class="lab-detail-label"><span class="lab-detail-icon">T</span>Contacto</div>
                     <div class="lab-detail-value">381 555-1234</div>
                 </div>
             </div>
@@ -747,7 +747,7 @@ with st.expander("Ver datos y cambios detectados", expanded=False):
     st.markdown("**Eliminaciones**")
     st.json(resultado_tabla["deleted"])
 
-st.markdown("### OperationalListEditor Â· Custom element")
+st.markdown("### OperationalListEditor ? Custom element")
 st.caption(
     "Primer prototipo custom para listas operativas tactiles. "
     "Usa catalogo controlado de materiales y devuelve eventos a Python."
@@ -809,7 +809,7 @@ if resultado_custom_lista:
         st.json(resultado_custom_lista)
 
 st.divider()
-st.markdown("## Laboratorio Â· Asistencias")
+st.markdown("## Laboratorio ? Asistencias")
 st.caption(
     "Prototipo controlado para carga diaria desde celular. "
     "Usa datos mock y no guarda en Supabase."
@@ -898,20 +898,20 @@ def lab_att_seed():
             {
                 "id": "obra_1037",
                 "kind": "obra",
-                "line1": "Expte. 1037/26 Â· Ortiz Jorgelina",
-                "line2": "Calle San Martin 123 Â· Barrio Centro",
+                "line1": "Expte. 1037/26 ? Ortiz Jorgelina",
+                "line2": "Calle San Martin 123 ? Barrio Centro",
             },
             {
                 "id": "obra_4869",
                 "kind": "obra",
-                "line1": "Expte. 4869/26 Â· Ramos Rita",
-                "line2": "Callao ultima cuadra S/N Â· Colmena Norte",
+                "line1": "Expte. 4869/26 ? Ramos Rita",
+                "line2": "Callao ultima cuadra S/N ? Colmena Norte",
             },
             {
                 "id": "obra_217",
                 "kind": "obra",
-                "line1": "Expte. 217/2026 Â· Ramos Rita Sara",
-                "line2": "Reconquista 255 Â· Villa Rosa",
+                "line1": "Expte. 217/2026 ? Ramos Rita Sara",
+                "line2": "Reconquista 255 ? Villa Rosa",
             },
             {
                 "id": "dd",
@@ -988,7 +988,7 @@ def lab_att_render_person(state, person_id):
     )
     c1, c2, c3 = st.columns(3)
     c1.button(
-        "Presente" if status != "Presente" else "âœ“ Presente",
+        "Presente" if status != "Presente" else "? Presente",
         key=f"lab_att_pres_{person_id}",
         use_container_width=True,
         type="primary" if status == "Presente" else "secondary",
@@ -996,7 +996,7 @@ def lab_att_render_person(state, person_id):
         args=(person_id, "Presente"),
     )
     c2.button(
-        "Ausente" if status != "Ausente" else "âœ“ Ausente",
+        "Ausente" if status != "Ausente" else "? Ausente",
         key=f"lab_att_aus_{person_id}",
         use_container_width=True,
         type="primary" if status == "Ausente" else "secondary",
@@ -1004,7 +1004,7 @@ def lab_att_render_person(state, person_id):
         args=(person_id, "Ausente"),
     )
     c3.button(
-        "Justificado" if status != "Justificado" else "âœ“ Justificado",
+        "Justificado" if status != "Justificado" else "? Justificado",
         key=f"lab_att_jus_{person_id}",
         use_container_width=True,
         type="primary" if status == "Justificado" else "secondary",
@@ -1089,7 +1089,7 @@ if st.button("Validar asistencia del dia", type="primary", use_container_width=T
     for person_id, assignment in state["assignments"].items():
         if assignment.get("status") == "Sin marcar":
             block = block_by_id.get(assignment.get("block_id"), {})
-            pending.append(f"{lab_att_person_name(state, person_id)} Â· {block.get('line1', 'Sin bloque')}")
+            pending.append(f"{lab_att_person_name(state, person_id)} ? {block.get('line1', 'Sin bloque')}")
     if pending:
         st.warning(f"No se puede validar. Quedan {len(pending)} personas sin marcar.")
         for item in pending:
@@ -1097,17 +1097,17 @@ if st.button("Validar asistencia del dia", type="primary", use_container_width=T
     else:
         st.success("Asistencia del dia validada en modo demo. No se guardo en Supabase.")
 
-st.markdown("### OperationalAttendanceBoard Â· Custom element")
+st.markdown("### OperationalAttendanceBoard ? Custom element")
 st.caption(
     "Prueba del mismo flujo como custom element: estados locales fluidos, movimiento de personas "
     "entre bloques y evento de validacion/guardado hacia Python."
 )
 
 attendance_blocks_demo = [
-    {"id": "obra_1037", "line1": "Expte. 1037/26 Â· Ortiz Jorgelina", "line2": "Calle San Martin 123 Â· Barrio Centro"},
-    {"id": "obra_4869", "line1": "Expte. 4869/26 Â· Ramos Rita", "line2": "Callao ultima cuadra S/N Â· Colmena Norte"},
-    {"id": "dd", "line1": "DD Â· Deposito / Carga y descarga", "line2": "Bloque fijo operativo", "fixed": True},
-    {"id": "oe", "line1": "OE Â· Obra externa / Otras areas", "line2": "Bloque fijo operativo", "fixed": True},
+    {"id": "obra_1037", "line1": "Expte. 1037/26 ? Ortiz Jorgelina", "line2": "Calle San Martin 123 ? Barrio Centro"},
+    {"id": "obra_4869", "line1": "Expte. 4869/26 ? Ramos Rita", "line2": "Callao ultima cuadra S/N ? Colmena Norte"},
+    {"id": "dd", "line1": "DD ? Deposito / Carga y descarga", "line2": "Bloque fijo operativo", "fixed": True},
+    {"id": "oe", "line1": "OE ? Obra externa / Otras areas", "line2": "Bloque fijo operativo", "fixed": True},
 ]
 attendance_people_demo = [
     {"id": "p1", "name": "Coria Fabian"},
