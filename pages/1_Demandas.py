@@ -554,59 +554,72 @@ def cargar_estilos_demandas_v2():
             margin-bottom: 4px;
         }
         .dem-v2-kpi {
-            background: #ffffff;
-            border: 1px solid #dbe7ee;
-            border-left: 3px solid #006b68;
-            border-radius: 10px;
-            padding: 4px 7px;
-            min-height: 38px;
-            box-shadow: 0 1px 6px rgba(15, 23, 42, 0.035);
+            background: rgba(255, 255, 255, 0.97);
+            border: 1px solid #d7e0e8;
+            border-left: 5px solid #006b68;
+            border-radius: 14px;
+            min-height: 92px;
+            padding: 12px 16px;
+            box-shadow: 0 1px 7px rgba(15, 23, 42, 0.04);
         }
         .dem-v2-kpi-label {
-            color: #64748b;
-            font-size: 9px;
+            color: #46576a;
+            font-size: 11px;
             font-weight: 850;
-            letter-spacing: 0.02em;
+            letter-spacing: 0.045em;
             text-transform: uppercase;
             line-height: 1.1;
+            margin-bottom: 9px;
         }
         .dem-v2-kpi-value {
             color: #0f2742;
-            font-size: 17px;
+            font-size: 28px;
             font-weight: 850;
-            line-height: 1;
-            margin-top: 3px;
+            line-height: 1.08;
         }
         .dem-v2-kpi-split {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 8px;
-            margin-top: 5px;
+            gap: 12px;
         }
         .dem-v2-kpi-metric-label {
-            color: #64748b;
-            font-size: 9px;
-            font-weight: 850;
+            color: #607086;
+            font-size: 10px;
+            font-weight: 750;
+            letter-spacing: 0.025em;
             line-height: 1.1;
             text-transform: uppercase;
         }
         .dem-v2-kpi-metric-value {
             color: #0f2742;
-            font-size: 18px;
+            font-size: 28px;
             font-weight: 850;
-            line-height: 1.05;
-            margin-top: 2px;
+            line-height: 1.08;
+            margin-top: 3px;
         }
         .dem-v2-kpi-detail {
-            color: #475569;
-            font-size: 11px;
-            font-weight: 750;
-            margin-top: 6px;
+            display: inline-flex;
+            align-items: center;
+            color: #006b68;
+            background: #eefdfa;
+            border: 1px solid #c9f2ea;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 800;
+            margin-top: 8px;
+            padding: 3px 9px;
             white-space: nowrap;
         }
-        .dem-v2-kpi-blue { border-left-color: #1d4ed8; }
+        .dem-v2-kpi-green { border-left-color: #006b68; }
+        .dem-v2-kpi-blue { border-left-color: #2563eb; }
         .dem-v2-kpi-amber { border-left-color: #f59e0b; }
         .dem-v2-kpi-red { border-left-color: #dc2626; }
+        .dem-v2-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+            margin-bottom: 8px;
+        }
         .dem-v2-kpi-chip {
             display: inline-flex;
             align-items: center;
@@ -855,6 +868,7 @@ def cargar_estilos_demandas_v2():
             white-space: nowrap !important;
         }
         @media (max-width: 900px) {
+            .dem-v2-kpi-grid { grid-template-columns: 1fr; }
             .dem-v2-detail-meta { grid-template-columns: 1fr; }
             .dem-v2-data-grid { grid-template-columns: 1fr; }
             .dem-v2-list-head { align-items: stretch; flex-direction: column; }
@@ -980,10 +994,9 @@ def render_kpi_demanda_v2(label, value, tone="green"):
     )
 
 
-def render_kpi_operativo_v2(titulo, izquierda_label, izquierda_valor, derecha_label, derecha_valor, detalle=None, tone="green"):
+def kpi_operativo_html(titulo, izquierda_label, izquierda_valor, derecha_label, derecha_valor, detalle=None, tone="green"):
     detalle_html = f'<div class="dem-v2-kpi-detail">{html.escape(detalle)}</div>' if detalle else ""
-    st.markdown(
-        f"""
+    return f"""
         <div class="dem-v2-kpi dem-v2-kpi-{tone}">
             <div class="dem-v2-kpi-label">{html.escape(titulo)}</div>
             <div class="dem-v2-kpi-split">
@@ -998,7 +1011,12 @@ def render_kpi_operativo_v2(titulo, izquierda_label, izquierda_valor, derecha_la
             </div>
             {detalle_html}
         </div>
-        """,
+        """
+
+
+def render_kpi_operativo_v2(titulo, izquierda_label, izquierda_valor, derecha_label, derecha_valor, detalle=None, tone="green"):
+    st.markdown(
+        kpi_operativo_html(titulo, izquierda_label, izquierda_valor, derecha_label, derecha_valor, detalle, tone),
         unsafe_allow_html=True,
     )
 
@@ -1009,10 +1027,8 @@ def render_demandas_kpis_v2(df):
     ordenes = calcular_kpis_ordenes()
     sin_resp = contar_sin_responsable(df)
 
-    st.markdown('<div class="dem-v2-kpi-row">', unsafe_allow_html=True)
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        render_kpi_operativo_v2(
+    cards = [
+        kpi_operativo_html(
             "Obras",
             "Activas",
             obras["activas"],
@@ -1020,29 +1036,27 @@ def render_demandas_kpis_v2(df):
             obras["pendientes"],
             detalle=f"HA {obras['ha']} · MO {obras['mo']}",
             tone="green",
-        )
-    with c2:
-        render_kpi_operativo_v2(
+        ),
+        kpi_operativo_html(
             "Visitas",
             "Para visita",
             visitas["para_visita"],
             "Programadas",
             visitas["programadas"],
             tone="blue",
-        )
-    with c3:
-        render_kpi_operativo_v2(
+        ),
+        kpi_operativo_html(
             "Órdenes",
             "Pendientes",
             ordenes["pendientes"],
             "Programadas",
             ordenes["programadas"],
             tone="amber",
-        )
-    st.markdown('</div>', unsafe_allow_html=True)
+        ),
+    ]
+    st.markdown(f'<div class="dem-v2-kpi-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
     if sin_resp:
         st.markdown(f'<div class="dem-v2-kpi-chip">! {sin_resp} sin responsable</div>', unsafe_allow_html=True)
-
 
 def compactar_espaciado_operational_cards():
     st.markdown(
