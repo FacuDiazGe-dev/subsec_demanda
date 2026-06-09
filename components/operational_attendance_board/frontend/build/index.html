@@ -457,17 +457,28 @@
 
         blocks.forEach((block) => {
           const blockId = String(block.id || block.id_obra);
-          const present = Object.entries(assignments)
-            .filter(([, a]) => String(a.block_id) === blockId && a.status === "Presente")
-            .map(([pid]) => plainPersonName(pmap[pid] || {}) || `ID ${pid}`)
-            .sort((a, b) => a.localeCompare(b));
+          const rows = Object.entries(assignments)
+            .filter(([, a]) => String(a.block_id) === blockId)
+            .map(([pid, a]) => ({
+              name: plainPersonName(pmap[pid] || {}) || `ID ${pid}`,
+              status: a.status || "Sin marcar",
+            }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+          const present = rows.filter((row) => row.status === "Presente");
+          const absent = rows.filter((row) => row.status === "Ausente" || row.status === "Justificado");
 
-          if (!present.length) return;
+          if (!present.length && !absent.length) return;
           lines.push("");
           lines.push(`*${block.line1 || block.title || "Bloque"}*`);
           if (block.line2 || block.subtitle) lines.push(`_${block.line2 || block.subtitle}_`);
-          lines.push("*Presentes:*");
-          present.forEach((name) => lines.push(`- ${name}`));
+          if (present.length) {
+            lines.push("*Presentes:*");
+            present.forEach((row) => lines.push(`- ${row.name}`));
+          }
+          if (absent.length) {
+            lines.push("*Ausentes:*");
+            absent.forEach((row) => lines.push(`- ${row.name} - ${row.status}`));
+          }
         });
 
         if (lines.length === 1) {

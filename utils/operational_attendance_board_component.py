@@ -81,7 +81,7 @@ def operational_attendance_board(
         copy_label=copy_label or save_label or "Copiar parte",
         save_label=save_label or "Guardar asistencia",
         validate_label=validate_label or "Validar asistencia",
-        component_version="2026-06-02-attendance-board-copy-report",
+        component_version="2026-06-09-attendance-board-absent-report",
         key=key or "operational_attendance_board",
         default=None,
     )
