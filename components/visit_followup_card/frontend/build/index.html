@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VisitFollowupCard</title>
+    <style>
+      :root {
+        --text-main: #1e293b;
+        --text-secondary: #64748b;
+        --border: #e2e8f0;
+        --bg: #ffffff;
+        --bg-soft: #f8fafc;
+        --green: #006b68;
+        --green-dark: #004f4c;
+        --blue: #1d4ed8;
+        --amber: #d97706;
+        --muted: #94a3b8;
+      }
+      body {
+        margin: 0;
+        font-family: Inter, Roboto, Arial, sans-serif;
+        background: transparent;
+        color: var(--text-main);
+        overflow: hidden;
+      }
+      html,
+      #root {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+      }
+      .visit-card {
+        position: relative;
+        box-sizing: border-box;
+        border: 1px solid var(--border);
+        border-left: 5px solid var(--green);
+        border-radius: 16px;
+        background: var(--bg);
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+        padding: 14px 16px 16px;
+        overflow: hidden;
+      }
+      .visit-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: flex-start;
+      }
+      .visit-title {
+        font-size: 15.5px;
+        line-height: 1.25;
+        font-weight: 850;
+        margin: 0;
+      }
+      .visit-subtitle {
+        margin-top: 3px;
+        color: var(--text-secondary);
+        font-size: 13px;
+        font-weight: 650;
+      }
+      .visit-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 10px;
+      }
+      .chip {
+        box-sizing: border-box;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--bg-soft);
+        color: #475569;
+        padding: 3px 8px;
+        font-size: 12px;
+        font-weight: 700;
+        max-width: 100%;
+      }
+      .priority {
+        border-color: #fed7aa;
+        background: #fff7ed;
+        color: #9a3412;
+        white-space: nowrap;
+      }
+      .visit-rows {
+        margin-top: 13px;
+        display: grid;
+        gap: 8px;
+      }
+      .visit-row {
+        display: grid;
+        grid-template-columns: 92px repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        align-items: center;
+      }
+      .row-label {
+        font-size: 12px;
+        font-weight: 850;
+        letter-spacing: .02em;
+        text-transform: uppercase;
+        color: #0f172a;
+      }
+      .status {
+        box-sizing: border-box;
+        min-height: 30px;
+        display: inline-flex;
+        justify-content: center;
+        align-items: center;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--bg-soft);
+        color: #475569;
+        padding: 5px 8px;
+        font-size: 12.5px;
+        font-weight: 750;
+        white-space: nowrap;
+      }
+      .status-blue {
+        background: #eff6ff;
+        border-color: #bfdbfe;
+        color: #1d4ed8;
+      }
+      .status-green {
+        background: #ecfdf5;
+        border-color: #99f6e4;
+        color: #006b68;
+      }
+      .status-amber {
+        background: #fffbeb;
+        border-color: #fde68a;
+        color: #92400e;
+      }
+      .status-muted {
+        background: #f1f5f9;
+        border-color: #e2e8f0;
+        color: #64748b;
+      }
+      .status-clickable {
+        cursor: pointer;
+        transition: transform .1s ease, border-color .1s ease;
+      }
+      .status-clickable:hover {
+        transform: translateY(-1px);
+        border-color: #5eead4;
+      }
+      .visit-actions {
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid var(--border);
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .btn {
+        border: 1px solid #cbd5e1;
+        border-radius: 11px;
+        background: #ffffff;
+        color: var(--text-main);
+        min-height: 38px;
+        padding: 8px 10px;
+        font-size: 13px;
+        font-weight: 750;
+        cursor: pointer;
+      }
+      .btn-primary {
+        background: var(--green);
+        border-color: var(--green);
+        color: #ffffff;
+      }
+      .btn-primary:hover {
+        background: var(--green-dark);
+        border-color: var(--green-dark);
+      }
+      .btn-secondary:hover {
+        background: #f8fafc;
+      }
+      @media (max-width: 540px) {
+        .visit-card {
+          padding: 12px;
+        }
+        .visit-head {
+          display: block;
+        }
+        .priority {
+          margin-top: 8px;
+          display: inline-flex;
+        }
+        .visit-row {
+          grid-template-columns: 1fr;
+          gap: 5px;
+          padding: 8px 0;
+          border-top: 1px solid #edf2f7;
+        }
+        .visit-row:first-child {
+          border-top: 0;
+          padding-top: 0;
+        }
+        .status {
+          justify-content: flex-start;
+          min-height: 32px;
+        }
+        .visit-actions {
+          grid-template-columns: 1fr;
+          gap: 8px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      const root = document.getElementById("root");
+      const MSG = {
+        COMPONENT_READY: "streamlit:componentReady",
+        SET_COMPONENT_VALUE: "streamlit:setComponentValue",
+        SET_FRAME_HEIGHT: "streamlit:setFrameHeight",
+        RENDER: "streamlit:render",
+      };
+      let currentProps = {};
+      let eventSeq = 0;
+
+      const esc = (value) =>
+        String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;");
+
+      const toArray = (value) => (Array.isArray(value) ? value : []);
+
+      function send(type, data = {}) {
+        window.parent.postMessage(
+          { isStreamlitMessage: true, type, ...data },
+          "*"
+        );
+      }
+
+      function setComponentReady() {
+        send(MSG.COMPONENT_READY, { apiVersion: 1 });
+      }
+
+      function setFrameHeight() {
+        const card = document.getElementById("visitCardRoot");
+        const measured = card ? Math.ceil(card.getBoundingClientRect().height) : 0;
+        send(MSG.SET_FRAME_HEIGHT, {
+          height: measured || document.documentElement.scrollHeight || 180,
+        });
+      }
+
+      function setComponentValue(value) {
+        send(MSG.SET_COMPONENT_VALUE, {
+          value: { ...value, event_id: `${Date.now()}_${eventSeq++}` },
+          dataType: "json",
+        });
+      }
+
+      function statusTone(text, kind) {
+        const value = String(text || "").toLowerCase();
+        if (kind === "report" && value.includes("con")) return "status-amber";
+        if (value.includes("programada")) return "status-blue";
+        if (value.includes("visitada")) return "status-green";
+        if (value.includes("informe")) return "status-amber";
+        return "status-muted";
+      }
+
+      function renderRow(row) {
+        const reportClass = row.report_enabled ? "status-clickable" : "";
+        const reportDisabled = row.report_enabled ? "" : "aria-disabled=\"true\"";
+        return `
+          <div class="visit-row">
+            <div class="row-label">${esc(row.label)}</div>
+            <div class="status ${statusTone(row.program_status, "program")}">${esc(row.program_status || "Sin programar")}</div>
+            <div class="status ${statusTone(row.visit_status, "visit")}">${esc(row.visit_status || "Sin visita")}</div>
+            <button class="status ${statusTone(row.report_status, "report")} ${reportClass}" data-action="toggle_report" data-target="${esc(row.target)}" ${reportDisabled}>
+              ${esc(row.report_status || "Sin informe")}
+            </button>
+          </div>
+        `;
+      }
+
+      function render(props) {
+        currentProps = props || {};
+        const rows = toArray(currentProps.rows);
+        const meta = [];
+        if (currentProps.address) meta.push(`Domicilio: ${currentProps.address}`);
+        if (currentProps.contact) meta.push(`Contacto: ${currentProps.contact}`);
+        if (currentProps.scheduled_date) meta.push(`Fecha prog.: ${currentProps.scheduled_date}`);
+
+        root.innerHTML = `
+          <div class="visit-card" id="visitCardRoot">
+            <div class="visit-head">
+              <div>
+                <div class="visit-title">${esc(currentProps.title)}</div>
+                ${currentProps.subtitle ? `<div class="visit-subtitle">${esc(currentProps.subtitle)}</div>` : ""}
+              </div>
+              ${currentProps.priority ? `<div class="chip priority">${esc(currentProps.priority)}</div>` : ""}
+            </div>
+            ${meta.length ? `<div class="visit-meta">${meta.map((item) => `<span class="chip">${esc(item)}</span>`).join("")}</div>` : ""}
+            <div class="visit-rows">
+              ${rows.map(renderRow).join("")}
+            </div>
+            <div class="visit-actions">
+              <button class="btn btn-secondary" data-action="program">Programar visita</button>
+              <button class="btn btn-primary" data-action="validate_reports">Validar informes</button>
+            </div>
+          </div>
+        `;
+
+        root.querySelectorAll("[data-action]").forEach((el) => {
+          el.addEventListener("click", (event) => {
+            const target = event.currentTarget;
+            if (target.getAttribute("aria-disabled") === "true") return;
+            setComponentValue({
+              card_key: currentProps.card_key || "",
+              action: target.dataset.action,
+              target: target.dataset.target || "",
+            });
+          });
+        });
+        setTimeout(setFrameHeight, 0);
+      }
+
+      window.addEventListener("message", (event) => {
+        if (event.data.type !== MSG.RENDER) return;
+        render((event.data.args || {}));
+      });
+
+      setComponentReady();
+      setFrameHeight();
+    </script>
+  </body>
+</html>

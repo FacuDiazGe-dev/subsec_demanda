@@ -22,7 +22,7 @@ from services.demandas_service import (
     crear_demanda,
     listar_demandas_pendientes,
 )
-from services.sociohabitacional_service import listar_visitas_detalladas, obtener_estados_por_accion
+from services.sociohabitacional_service import listar_visitas_detalladas
 from services.obras_service import listar_obras_con_demanda
 from services.ordenes_service import listar_ordenes_con_demanda
 from services.expedientes_service import (
@@ -347,8 +347,20 @@ def cargar_demanda_tab():
 
 
 def estados_para_demanda(demanda):
-    accion = demanda.get("accion")
-    return accion, obtener_estados_por_accion(accion)
+    accion = limpiar(demanda.get("accion"))
+    accion_norm = normalizar_texto(accion)
+    for accion_ref, estados in ESTADOS_POR_ACCION.items():
+        if normalizar_texto(accion_ref) == accion_norm:
+            estados_posibles = list(estados)
+            break
+    else:
+        estados_posibles = ["Ingresada", "En gestion", "Resuelta", "Entregado", "Cerrado"]
+
+    estado_actual = limpiar(demanda.get("estado"))
+    if estado_actual and estado_actual not in estados_posibles:
+        estados_posibles = [estado_actual] + estados_posibles
+
+    return accion, estados_posibles
 
 def valor_para_historial(valor):
     valor = limpiar(valor)
