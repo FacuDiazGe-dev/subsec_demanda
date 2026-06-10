@@ -22,7 +22,7 @@ from services.demandas_service import (
     crear_demanda,
     listar_demandas_pendientes,
 )
-from services.sociohabitacional_service import obtener_estados_por_accion
+from services.sociohabitacional_service import listar_visitas_detalladas, obtener_estados_por_accion
 from services.obras_service import listar_obras_con_demanda
 from services.ordenes_service import listar_ordenes_con_demanda
 from services.expedientes_service import (
@@ -928,6 +928,13 @@ def obtener_ordenes_para_kpi():
         return []
 
 
+def obtener_visitas_para_kpi():
+    try:
+        return listar_visitas_detalladas()
+    except Exception:
+        return []
+
+
 def calcular_kpis_obras(df):
     obras = obtener_obras_para_kpi()
     activas = [o for o in obras if normalizar_texto(o.get("estado_obra")) == "en ejecucion"]
@@ -964,8 +971,42 @@ def calcular_kpis_obras(df):
 
 
 def calcular_kpis_visitas(df):
+    visitas_registradas = obtener_visitas_para_kpi()
+    estados_cierre = {"cerrada", "cerrado", "finalizada", "finalizado", "cancelada", "cancelado"}
+    informes = {"informe"}
+    informe_social = 0
+    informe_tecnico = 0
+    completos = 0
+
+    for visita in visitas_registradas:
+        campos_estado = [
+            visita.get("estado"),
+            visita.get("estado_visita"),
+            visita.get("d_estado"),
+            visita.get("est_soc"),
+            visita.get("est_tec"),
+        ]
+        if any(normalizar_texto(valor) in estados_cierre for valor in campos_estado):
+            continue
+
+        soc_informe = normalizar_texto(visita.get("est_soc")) in informes
+        tec_informe = normalizar_texto(visita.get("est_tec")) in informes
+
+        if soc_informe and tec_informe:
+            completos += 1
+        elif soc_informe:
+            informe_social += 1
+        elif tec_informe:
+            informe_tecnico += 1
+
     if df.empty or "accion" not in df.columns:
-        return {"para_visita": 0, "programadas": 0}
+        return {
+            "para_visita": 0,
+            "programadas": 0,
+            "informe_tecnico": informe_tecnico,
+            "informe_social": informe_social,
+            "completos": completos,
+        }
     visitas = df[df["accion"].fillna("").map(normalizar_texto) == "visitar"]
     estados = visitas["estado"].fillna("").map(normalizar_texto) if "estado" in visitas.columns else pd.Series([], dtype=str)
     estados_para_visita = {"pendiente", "ingresada", "para visita", "sin programar"}
@@ -973,6 +1014,9 @@ def calcular_kpis_visitas(df):
     return {
         "para_visita": int(estados.isin(estados_para_visita).sum()),
         "programadas": int(estados.isin(estados_programadas).sum()),
+        "informe_tecnico": informe_tecnico,
+        "informe_social": informe_social,
+        "completos": completos,
     }
 
 
@@ -1106,7 +1150,11 @@ def render_demandas_kpis_v2(df):
             visitas["programadas"],
             "Pendientes",
             visitas["para_visita"],
-            footer_items=["IT 0", "IS 0", "C 0"],
+            footer_items=[
+                f"IT {visitas['informe_tecnico']}",
+                f"IS {visitas['informe_social']}",
+                f"C {visitas['completos']}",
+            ],
         ),
         compact_kpi_card_html(
             "Órdenes",

@@ -212,7 +212,7 @@ def listar_visitas_detalladas():
 
     for v in visitas:
         d = mapa_d.get(v["id_demanda"], {})
-        for k in ["apellido", "nombre", "expediente", "domicilio", "contacto", "prioridad", "fecha_ingreso", "observaciones"]:
+        for k in ["apellido", "nombre", "expediente", "domicilio", "contacto", "prioridad", "fecha_ingreso", "observaciones", "estado"]:
             v[f"d_{k}"] = d.get(k)
     return visitas
 
