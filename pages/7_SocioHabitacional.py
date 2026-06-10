@@ -45,9 +45,11 @@ def estado_visita_campo(estado):
     return "Visitada" if estado in ["Visitada", "Informe"] else "Sin visita"
 
 
-def estado_informe_visita(estado, marcado=False):
+def estado_informe_visita(estado, marcado=False, tipo=""):
     estado = clean(estado)
-    return "Con informe" if estado == "Informe" or marcado else "Sin informe"
+    if estado == "Informe" or marcado:
+        return f"Informe {tipo}".strip()
+    return "Sin informe"
 
 
 def render_card_socio(demanda, es_pendiente=False):
@@ -131,8 +133,36 @@ def tab_seguimiento_visitas():
         col_izq, col_der = st.columns([0.75, 0.25])
         with col_izq:
             st.markdown("#### Seguimiento general")
+            visitas_seleccionadas_key = "socio_visitas_programar_ids"
+            st.session_state.setdefault(visitas_seleccionadas_key, [])
+            selected_ids = {str(v_id) for v_id in st.session_state.get(visitas_seleccionadas_key, [])}
+
+            with st.container(border=True):
+                c_fecha, c_btn = st.columns([0.55, 0.45], vertical_alignment="bottom")
+                with c_fecha:
+                    fecha_programacion = st.date_input("Fecha para programar visitas seleccionadas", value=date.today(), key="socio_fecha_programacion_masiva")
+                with c_btn:
+                    programar_seleccionadas = st.button(
+                        f"Programar seleccionadas ({len(selected_ids)})",
+                        type="primary",
+                        use_container_width=True,
+                        disabled=not selected_ids,
+                        key="socio_btn_programar_masivo",
+                    )
+
+            if programar_seleccionadas:
+                try:
+                    for id_visit in selected_ids:
+                        registrar_programacion_individual(int(id_visit), fecha_programacion, "")
+                    st.session_state[visitas_seleccionadas_key] = []
+                    st.toast(f"Se programaron {len(selected_ids)} visita/s.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error al programar visitas: {e}")
+
             for v in visitas:
                 vid = v["id_visit"]
+                vid_str = str(vid)
                 v_soc_actual = clean(v.get("est_soc"))
                 v_tec_actual = clean(v.get("est_tec"))
                 st.session_state.setdefault(f"chk_inf_{vid}_s", v_soc_actual == "Informe")
@@ -150,21 +180,23 @@ def tab_seguimiento_visitas():
                             "label": "Social",
                             "program_status": estado_programacion_visita(v_soc_actual),
                             "visit_status": estado_visita_campo(v_soc_actual),
-                            "report_status": estado_informe_visita(v_soc_actual, st.session_state.get(f"chk_inf_{vid}_s")),
+                            "report_status": estado_informe_visita(v_soc_actual, st.session_state.get(f"chk_inf_{vid}_s"), "Social"),
                             "report_checked": st.session_state.get(f"chk_inf_{vid}_s"),
-                            "report_enabled": v_soc_actual in ["Visitada", "Informe"],
+                            "report_enabled": True,
                             "target": "s",
                         },
                         {
                             "label": "Tecnico",
                             "program_status": estado_programacion_visita(v_tec_actual),
                             "visit_status": estado_visita_campo(v_tec_actual),
-                            "report_status": estado_informe_visita(v_tec_actual, st.session_state.get(f"chk_inf_{vid}_t")),
+                            "report_status": estado_informe_visita(v_tec_actual, st.session_state.get(f"chk_inf_{vid}_t"), "Tecnico"),
                             "report_checked": st.session_state.get(f"chk_inf_{vid}_t"),
-                            "report_enabled": v_tec_actual in ["Visitada", "Informe"],
+                            "report_enabled": True,
                             "target": "t",
                         },
                     ],
+                    selectable=True,
+                    selected=vid_str in selected_ids,
                     card_key=f"visit_{vid}",
                     key=f"visit_card_{vid}",
                 )
@@ -180,15 +212,17 @@ def tab_seguimiento_visitas():
                 if isinstance(resultado_card, dict):
                     accion = resultado_card.get("action")
                     target = resultado_card.get("target")
-                    if accion == "program":
-                        st.session_state[f"form_p_{vid}"] = True
+                    if accion == "toggle_select":
+                        if vid_str in selected_ids:
+                            selected_ids.remove(vid_str)
+                        else:
+                            selected_ids.add(vid_str)
+                        st.session_state[visitas_seleccionadas_key] = sorted(selected_ids)
                         st.rerun()
                     if accion == "toggle_report" and target in {"s", "t"}:
-                        estado_actual = v_soc_actual if target == "s" else v_tec_actual
-                        if estado_actual in ["Visitada", "Informe"]:
-                            key_chk = f"chk_inf_{vid}_{target}"
-                            st.session_state[key_chk] = not bool(st.session_state.get(key_chk))
-                            st.rerun()
+                        key_chk = f"chk_inf_{vid}_{target}"
+                        st.session_state[key_chk] = not bool(st.session_state.get(key_chk))
+                        st.rerun()
                     if accion == "validate_reports":
                         chk_s = st.session_state.get(f"chk_inf_{vid}_s")
                         chk_t = st.session_state.get(f"chk_inf_{vid}_t")
@@ -198,19 +232,6 @@ def tab_seguimiento_visitas():
                             st.error("No se puede marcar informe sin visita realizada.")
                         else:
                             registrar_informes_hitos(vid, chk_s, chk_t)
-                            st.rerun()
-
-                if st.session_state.get(f"form_p_{vid}"):
-                    with st.form(f"f_inline_p_{vid}"):
-                        f_p = st.date_input("Fecha programada", value=date.today())
-                        o_p = st.text_input("Observacion opcional")
-                        fc1, fc2 = st.columns(2)
-                        if fc1.form_submit_button("Guardar"):
-                            registrar_programacion_individual(vid, f_p, o_p)
-                            st.session_state[f"form_p_{vid}"] = False
-                            st.rerun()
-                        if fc2.form_submit_button("Cancelar"):
-                            st.session_state[f"form_p_{vid}"] = False
                             st.rerun()
 
         with col_der:

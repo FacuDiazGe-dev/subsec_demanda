@@ -47,6 +47,32 @@
         gap: 12px;
         align-items: flex-start;
       }
+      .head-right {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .select-btn {
+        box-sizing: border-box;
+        width: 28px;
+        height: 28px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid #cbd5e1;
+        border-radius: 9px;
+        background: #ffffff;
+        color: transparent;
+        font-size: 17px;
+        line-height: 1;
+        font-weight: 900;
+        cursor: pointer;
+      }
+      .select-btn.selected {
+        background: var(--green);
+        border-color: var(--green);
+        color: #ffffff;
+      }
       .visit-title {
         font-size: 15.5px;
         line-height: 1.25;
@@ -147,9 +173,8 @@
         margin-top: 14px;
         padding-top: 12px;
         border-top: 1px solid var(--border);
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
+        display: flex;
+        justify-content: flex-end;
       }
       .btn {
         border: 1px solid #cbd5e1;
@@ -161,6 +186,9 @@
         font-size: 13px;
         font-weight: 750;
         cursor: pointer;
+      }
+      .visit-actions .btn {
+        min-width: 170px;
       }
       .btn-primary {
         background: var(--green);
@@ -181,9 +209,9 @@
         .visit-head {
           display: block;
         }
-        .priority {
+        .head-right {
           margin-top: 8px;
-          display: inline-flex;
+          justify-content: space-between;
         }
         .visit-row {
           grid-template-columns: 1fr;
@@ -200,8 +228,11 @@
           min-height: 32px;
         }
         .visit-actions {
-          grid-template-columns: 1fr;
-          gap: 8px;
+          display: block;
+        }
+        .visit-actions .btn {
+          width: 100%;
+          min-width: 0;
         }
       }
     </style>
@@ -255,7 +286,9 @@
 
       function statusTone(text, kind) {
         const value = String(text || "").toLowerCase();
+        if (value.includes("sin")) return "status-muted";
         if (kind === "report" && value.includes("con")) return "status-amber";
+        if (kind === "report" && value.includes("informe")) return "status-amber";
         if (value.includes("programada")) return "status-blue";
         if (value.includes("visitada")) return "status-green";
         if (value.includes("informe")) return "status-amber";
@@ -292,14 +325,16 @@
                 <div class="visit-title">${esc(currentProps.title)}</div>
                 ${currentProps.subtitle ? `<div class="visit-subtitle">${esc(currentProps.subtitle)}</div>` : ""}
               </div>
-              ${currentProps.priority ? `<div class="chip priority">${esc(currentProps.priority)}</div>` : ""}
+              <div class="head-right">
+                ${currentProps.priority ? `<div class="chip priority">${esc(currentProps.priority)}</div>` : ""}
+                ${currentProps.selectable ? `<button class="select-btn ${currentProps.selected ? "selected" : ""}" data-action="toggle_select" aria-label="Seleccionar visita">${currentProps.selected ? "✓" : "✓"}</button>` : ""}
+              </div>
             </div>
             ${meta.length ? `<div class="visit-meta">${meta.map((item) => `<span class="chip">${esc(item)}</span>`).join("")}</div>` : ""}
             <div class="visit-rows">
               ${rows.map(renderRow).join("")}
             </div>
             <div class="visit-actions">
-              <button class="btn btn-secondary" data-action="program">Programar visita</button>
               <button class="btn btn-primary" data-action="validate_reports">Validar informes</button>
             </div>
           </div>
@@ -313,6 +348,7 @@
               card_key: currentProps.card_key || "",
               action: target.dataset.action,
               target: target.dataset.target || "",
+              selected: target.dataset.action === "toggle_select" ? !Boolean(currentProps.selected) : Boolean(currentProps.selected),
             });
           });
         });

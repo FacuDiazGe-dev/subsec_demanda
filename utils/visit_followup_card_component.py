@@ -25,6 +25,8 @@ def visit_followup_card(
     priority=None,
     scheduled_date=None,
     rows=None,
+    selectable=False,
+    selected=False,
     card_key=None,
     key=None,
 ):
@@ -53,8 +55,10 @@ def visit_followup_card(
         priority=priority or "",
         scheduled_date=scheduled_date or "",
         rows=parsed_rows,
+        selectable=bool(selectable),
+        selected=bool(selected),
         card_key=card_key or "",
-        component_version="2026-06-10-visit-card",
+        component_version="2026-06-10-visit-card-bulk-program",
         key=component_key,
         default=None,
     )
