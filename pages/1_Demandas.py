@@ -558,29 +558,44 @@ def cargar_estilos_demandas_v2():
             border: 1px solid #d7e0e8;
             border-left: 5px solid #006b68;
             border-radius: 14px;
-            min-height: 92px;
-            padding: 12px 16px;
+            min-height: 94px;
+            padding: 10px 14px;
             box-shadow: 0 1px 7px rgba(15, 23, 42, 0.04);
         }
-        .dem-v2-kpi-label {
+        .dem-v2-kpi-header {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            border-bottom: 1px solid #e5edf3;
+            padding-bottom: 6px;
+            margin-bottom: 7px;
+        }
+        .dem-v2-kpi-icon {
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 850;
+            line-height: 1;
+        }
+        .dem-v2-kpi-title {
             color: #46576a;
             font-size: 11px;
             font-weight: 850;
             letter-spacing: 0.045em;
             text-transform: uppercase;
             line-height: 1.1;
-            margin-bottom: 9px;
         }
-        .dem-v2-kpi-value {
-            color: #0f2742;
-            font-size: 28px;
-            font-weight: 850;
-            line-height: 1.08;
-        }
-        .dem-v2-kpi-split {
+        .dem-v2-kpi-body {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 12px;
+        }
+        .dem-v2-kpi-main {
+            min-width: 0;
+            padding-right: 10px;
+        }
+        .dem-v2-kpi-main + .dem-v2-kpi-main {
+            border-left: 1px solid #e5edf3;
+            padding-left: 12px;
+            padding-right: 0;
         }
         .dem-v2-kpi-metric-label {
             color: #607086;
@@ -597,18 +612,19 @@ def cargar_estilos_demandas_v2():
             line-height: 1.08;
             margin-top: 3px;
         }
-        .dem-v2-kpi-detail {
-            display: inline-flex;
-            align-items: center;
-            color: #006b68;
-            background: #eefdfa;
-            border: 1px solid #c9f2ea;
-            border-radius: 999px;
-            font-size: 12px;
+        .dem-v2-kpi-footer {
+            display: grid;
+            grid-template-columns: repeat(var(--items, 1), minmax(0, 1fr));
+            border-top: 1px solid #e5edf3;
+            color: #475569;
+            font-size: 11.5px;
             font-weight: 800;
             margin-top: 8px;
-            padding: 3px 9px;
-            white-space: nowrap;
+            padding-top: 6px;
+            text-align: center;
+        }
+        .dem-v2-kpi-footer-item + .dem-v2-kpi-footer-item {
+            border-left: 1px solid #e5edf3;
         }
         .dem-v2-kpi-green { border-left-color: #006b68; }
         .dem-v2-kpi-blue { border-left-color: #2563eb; }
@@ -973,50 +989,94 @@ def calcular_kpis_ordenes():
     estados_programadas = {"pendiente de entrega", "pendiente de retiro"}
     pendientes = 0
     programadas = 0
+    entrega = 0
+    retiro = 0
+    deposito = 0
     for orden in ordenes:
         estado = normalizar_texto(orden.get("estado"))
+        if "entrega" in estado:
+            entrega += 1
+        if "retiro" in estado:
+            retiro += 1
+        if "deposito" in estado:
+            deposito += 1
         if estado in estados_programadas:
             programadas += 1
         elif estado in estados_pendientes:
             pendientes += 1
-    return {"pendientes": pendientes, "programadas": programadas}
+    return {
+        "pendientes": pendientes,
+        "programadas": programadas,
+        "entrega": entrega,
+        "retiro": retiro,
+        "deposito": deposito,
+    }
 
 
-def render_kpi_demanda_v2(label, value, tone="green"):
-    st.markdown(
-        f"""
-        <div class="dem-v2-kpi dem-v2-kpi-{tone}">
-            <div class="dem-v2-kpi-label">{label}</div>
-            <div class="dem-v2-kpi-value">{value}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def kpi_operativo_html(titulo, izquierda_label, izquierda_valor, derecha_label, derecha_valor, detalle=None, tone="green"):
-    detalle_html = f'<div class="dem-v2-kpi-detail">{html.escape(detalle)}</div>' if detalle else ""
+def compact_kpi_card_html(
+    title,
+    icon,
+    tone,
+    label_1,
+    value_1,
+    label_2,
+    value_2,
+    footer_items=None,
+):
+    footer_items = [str(item) for item in (footer_items or []) if str(item).strip()]
+    footer_html = ""
+    if footer_items:
+        items_html = "".join(
+            f'<div class="dem-v2-kpi-footer-item">{html.escape(item)}</div>'
+            for item in footer_items[:3]
+        )
+        footer_html = (
+            f'<div class="dem-v2-kpi-footer" style="--items:{len(footer_items[:3])};">'
+            f'{items_html}'
+            '</div>'
+        )
+    icon_html = f'<span class="dem-v2-kpi-icon">{html.escape(icon)}</span>' if icon else ""
     return (
         f'<div class="dem-v2-kpi dem-v2-kpi-{tone}">'
-        f'<div class="dem-v2-kpi-label">{html.escape(titulo)}</div>'
-        '<div class="dem-v2-kpi-split">'
-        '<div>'
-        f'<div class="dem-v2-kpi-metric-label">{html.escape(izquierda_label)}</div>'
-        f'<div class="dem-v2-kpi-metric-value">{izquierda_valor}</div>'
+        '<div class="dem-v2-kpi-header">'
+        f'{icon_html}<div class="dem-v2-kpi-title">{html.escape(title)}</div>'
         '</div>'
-        '<div>'
-        f'<div class="dem-v2-kpi-metric-label">{html.escape(derecha_label)}</div>'
-        f'<div class="dem-v2-kpi-metric-value">{derecha_valor}</div>'
+        '<div class="dem-v2-kpi-body">'
+        '<div class="dem-v2-kpi-main">'
+        f'<div class="dem-v2-kpi-metric-label">{html.escape(label_1)}</div>'
+        f'<div class="dem-v2-kpi-metric-value">{value_1}</div>'
+        '</div>'
+        '<div class="dem-v2-kpi-main">'
+        f'<div class="dem-v2-kpi-metric-label">{html.escape(label_2)}</div>'
+        f'<div class="dem-v2-kpi-metric-value">{value_2}</div>'
         '</div>'
         '</div>'
-        f'{detalle_html}'
+        f'{footer_html}'
         '</div>'
     )
 
 
-def render_kpi_operativo_v2(titulo, izquierda_label, izquierda_valor, derecha_label, derecha_valor, detalle=None, tone="green"):
+def render_compact_kpi_card(
+    title,
+    icon,
+    accent_color,
+    label_1,
+    value_1,
+    label_2,
+    value_2,
+    footer_items=None,
+):
     st.markdown(
-        kpi_operativo_html(titulo, izquierda_label, izquierda_valor, derecha_label, derecha_valor, detalle, tone),
+        compact_kpi_card_html(
+            title,
+            icon,
+            accent_color,
+            label_1,
+            value_1,
+            label_2,
+            value_2,
+            footer_items,
+        ),
         unsafe_allow_html=True,
     )
 
@@ -1028,30 +1088,35 @@ def render_demandas_kpis_v2(df):
     sin_resp = contar_sin_responsable(df)
 
     cards = [
-        kpi_operativo_html(
+        compact_kpi_card_html(
             "Obras",
-            "Activas",
+            "O",
+            "amber",
+            "En ejecución",
             obras["activas"],
             "Pendientes",
             obras["pendientes"],
-            detalle=f"HA {obras['ha']} · MO {obras['mo']}",
-            tone="green",
+            footer_items=[f"HA {obras['ha']}", f"MO {obras['mo']}"],
         ),
-        kpi_operativo_html(
+        compact_kpi_card_html(
             "Visitas",
-            "Para visita",
-            visitas["para_visita"],
+            "V",
+            "blue",
             "Programadas",
             visitas["programadas"],
-            tone="blue",
-        ),
-        kpi_operativo_html(
-            "Órdenes",
             "Pendientes",
-            ordenes["pendientes"],
+            visitas["para_visita"],
+            footer_items=["IT 0", "IS 0", "C 0"],
+        ),
+        compact_kpi_card_html(
+            "Órdenes",
+            "OR",
+            "green",
             "Programadas",
             ordenes["programadas"],
-            tone="amber",
+            "Pendientes",
+            ordenes["pendientes"],
+            footer_items=[f"E {ordenes['entrega']}", f"R {ordenes['retiro']}", f"D {ordenes['deposito']}"],
         ),
     ]
     kpi_html = f'<div class="dem-v2-kpi-grid">{"".join(cards)}</div>'
