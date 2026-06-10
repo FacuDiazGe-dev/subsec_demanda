@@ -3,6 +3,7 @@ from datetime import date
 import streamlit as st
 
 from utils.auth import require_login
+from utils.operational_kpi_component import operational_kpis
 from utils.visit_followup_card_component import visit_followup_card
 from services.sociohabitacional_service import (
     actualizar_estado_demanda_social,
@@ -146,6 +147,42 @@ def render_filtros_visitas_socio(visitas_all):
     return visitas, q
 
 
+def render_kpis_sociohabitacional(c_para, c_prog, c_inf, c_comp):
+    operational_kpis(
+        [
+            {
+                "label": "Para visita",
+                "value": c_para,
+                "tone": "blue",
+                "icon": "PV",
+                "caption": "Sin programar",
+            },
+            {
+                "label": "Programados",
+                "value": c_prog,
+                "tone": "green",
+                "icon": "P",
+                "caption": "Con fecha",
+            },
+            {
+                "label": "Informes pendientes",
+                "value": c_inf,
+                "tone": "amber",
+                "icon": "IP",
+                "caption": "Visitadas",
+            },
+            {
+                "label": "Completados",
+                "value": c_comp,
+                "tone": "muted",
+                "icon": "C",
+                "caption": "Informes",
+            },
+        ],
+        key="socio_kpis_visitas",
+    )
+
+
 def render_card_socio(demanda, es_pendiente=False):
     n_id = demanda.get("id_demanda")
     titular = f"{clean(demanda.get('apellido'))}, {clean(demanda.get('nombre'))}"
@@ -203,11 +240,7 @@ def tab_seguimiento_visitas():
         return
 
     c_para, c_prog, c_inf, c_comp = contar_indicadores_visitas(visitas_all)
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Para visita", c_para)
-    k2.metric("Programados", c_prog)
-    k3.metric("Informes pendientes", c_inf)
-    k4.metric("Completados", c_comp)
+    render_kpis_sociohabitacional(c_para, c_prog, c_inf, c_comp)
 
     st.divider()
     st.markdown(

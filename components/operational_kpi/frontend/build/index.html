@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OperationalKPI</title>
+    <style>
+      :root {
+        --text-main: #1e293b;
+        --text-secondary: #64748b;
+        --border: #e2e8f0;
+        --bg: #ffffff;
+        --bg-soft: #f8fafc;
+        --green: #006b68;
+        --blue: #2563eb;
+        --amber: #f59e0b;
+        --red: #dc2626;
+        --muted: #94a3b8;
+      }
+      body {
+        margin: 0;
+        font-family: Inter, Roboto, Arial, sans-serif;
+        background: transparent;
+        color: var(--text-main);
+        overflow: hidden;
+      }
+      html,
+      #root {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+      }
+      .kpi-grid {
+        box-sizing: border-box;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+        width: 100%;
+      }
+      .kpi-card {
+        box-sizing: border-box;
+        position: relative;
+        min-height: 66px;
+        border: 1px solid var(--border);
+        border-left: 5px solid var(--accent, var(--green));
+        border-radius: 13px;
+        background: var(--bg);
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+        padding: 8px 10px 8px 12px;
+        overflow: hidden;
+      }
+      .kpi-green { --accent: var(--green); }
+      .kpi-blue { --accent: var(--blue); }
+      .kpi-amber { --accent: var(--amber); }
+      .kpi-red { --accent: var(--red); }
+      .kpi-muted { --accent: var(--muted); }
+      .kpi-head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .kpi-icon {
+        width: 22px;
+        height: 22px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--accent) 12%, #ffffff);
+        color: var(--accent);
+        font-size: 11px;
+        font-weight: 850;
+        flex: 0 0 auto;
+      }
+      .kpi-label {
+        min-width: 0;
+        color: var(--text-secondary);
+        font-size: 10.5px;
+        font-weight: 850;
+        letter-spacing: .035em;
+        text-transform: uppercase;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .kpi-body {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 8px;
+        margin-top: 5px;
+      }
+      .kpi-value {
+        color: var(--text-main);
+        font-size: 25px;
+        line-height: .95;
+        font-weight: 900;
+      }
+      .kpi-caption {
+        color: var(--text-secondary);
+        font-size: 11px;
+        line-height: 1.15;
+        font-weight: 650;
+        text-align: right;
+        max-width: 56%;
+      }
+      @media (max-width: 820px) {
+        .kpi-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+      @media (max-width: 520px) {
+        .kpi-grid {
+          grid-template-columns: 1fr;
+          gap: 7px;
+        }
+        .kpi-card {
+          min-height: 58px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      const root = document.getElementById("root");
+      const MSG = {
+        COMPONENT_READY: "streamlit:componentReady",
+        SET_COMPONENT_VALUE: "streamlit:setComponentValue",
+        SET_FRAME_HEIGHT: "streamlit:setFrameHeight",
+        RENDER: "streamlit:render",
+      };
+
+      const esc = (value) =>
+        String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;");
+
+      const toArray = (value) => (Array.isArray(value) ? value : []);
+
+      function send(type, data = {}) {
+        window.parent.postMessage(
+          { isStreamlitMessage: true, type, ...data },
+          "*"
+        );
+      }
+
+      function setComponentReady() {
+        send(MSG.COMPONENT_READY, { apiVersion: 1 });
+      }
+
+      function setFrameHeight() {
+        const grid = document.getElementById("kpiGridRoot");
+        const measured = grid ? Math.ceil(grid.getBoundingClientRect().height) : 0;
+        send(MSG.SET_FRAME_HEIGHT, {
+          height: measured || document.documentElement.scrollHeight || 80,
+        });
+      }
+
+      function tone(value) {
+        const allowed = new Set(["green", "blue", "amber", "red", "muted"]);
+        return allowed.has(value) ? value : "green";
+      }
+
+      function render(props) {
+        const items = toArray((props || {}).items);
+        root.innerHTML = `
+          <div class="kpi-grid" id="kpiGridRoot">
+            ${items.map((item) => `
+              <div class="kpi-card kpi-${tone(item.tone)}">
+                <div class="kpi-head">
+                  ${item.icon ? `<span class="kpi-icon">${esc(item.icon)}</span>` : ""}
+                  <div class="kpi-label">${esc(item.label)}</div>
+                </div>
+                <div class="kpi-body">
+                  <div class="kpi-value">${esc(item.value)}</div>
+                  ${item.caption ? `<div class="kpi-caption">${esc(item.caption)}</div>` : ""}
+                </div>
+              </div>
+            `).join("")}
+          </div>
+        `;
+        setTimeout(setFrameHeight, 0);
+      }
+
+      window.addEventListener("message", (event) => {
+        if (event.data.type !== MSG.RENDER) return;
+        render(event.data.args || {});
+      });
+
+      setComponentReady();
+      setFrameHeight();
+    </script>
+  </body>
+</html>
