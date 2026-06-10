@@ -210,11 +210,16 @@ def listar_visitas_detalladas():
     res_d = supabase.table("demandas").select("*").in_("id_demanda", ids_dem).execute()
     mapa_d = {d["id_demanda"]: d for d in res_d.data or []}
 
+    estados_demanda_excluidos = {"cancelada", "cancelado", "finalizada", "finalizado", "cerrada", "cerrado"}
+    visitas_activas = []
     for v in visitas:
         d = mapa_d.get(v["id_demanda"], {})
+        if _normalizar(d.get("estado")) in estados_demanda_excluidos:
+            continue
         for k in ["apellido", "nombre", "expediente", "domicilio", "contacto", "prioridad", "fecha_ingreso", "observaciones", "estado"]:
             v[f"d_{k}"] = d.get(k)
-    return visitas
+        visitas_activas.append(v)
+    return visitas_activas
 
 def registrar_programacion_individual(id_visit, fecha_program, observacion=""):
     """Actualiza la programación de una visita específica."""

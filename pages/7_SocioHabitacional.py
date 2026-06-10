@@ -52,6 +52,100 @@ def estado_informe_visita(estado, marcado=False, tipo=""):
     return "Sin informe"
 
 
+def visita_tiene_estado(v, estados):
+    estados = set(estados)
+    return clean(v.get("est_soc")) in estados or clean(v.get("est_tec")) in estados
+
+
+def visita_sin_programar(v):
+    estados_sin_programar = {"", "Para visita"}
+    return clean(v.get("est_soc")) in estados_sin_programar or clean(v.get("est_tec")) in estados_sin_programar
+
+
+def visita_estado_dispar(v):
+    return clean(v.get("est_soc")) != clean(v.get("est_tec"))
+
+
+def visita_match_estado(v, filtro_estado):
+    if filtro_estado == "Todos":
+        return True
+    if filtro_estado == "Sin programar":
+        return visita_sin_programar(v)
+    if filtro_estado == "Programadas":
+        return visita_tiene_estado(v, {"Programada"})
+    if filtro_estado == "Visitadas":
+        return visita_tiene_estado(v, {"Visitada"})
+    if filtro_estado == "Con informe":
+        return visita_tiene_estado(v, {"Informe"})
+    if filtro_estado == "Estados dispares":
+        return visita_estado_dispar(v)
+    return True
+
+
+def visita_match_informes(v, filtro_informes):
+    est_soc = clean(v.get("est_soc"))
+    est_tec = clean(v.get("est_tec"))
+    if filtro_informes == "Todos":
+        return True
+    if filtro_informes == "Social pendiente":
+        return est_soc == "Visitada"
+    if filtro_informes == "Tecnico pendiente":
+        return est_tec == "Visitada"
+    if filtro_informes == "Algun pendiente":
+        return est_soc == "Visitada" or est_tec == "Visitada"
+    if filtro_informes == "Completos":
+        return est_soc == "Informe" and est_tec == "Informe"
+    if filtro_informes == "Sin pendientes":
+        return est_soc != "Visitada" and est_tec != "Visitada"
+    return True
+
+
+def limpiar_filtros_socio_visitas():
+    for key in ["socio_busqueda_visitas", "socio_estado_visitas", "socio_informes_visitas"]:
+        st.session_state.pop(key, None)
+
+
+def render_filtros_visitas_socio(visitas_all):
+    with st.container(border=True, key="socio_filtros_visitas"):
+        c1, c2, c3, c4 = st.columns([2.1, 1.25, 1.35, 0.75])
+        with c1:
+            busqueda = st.text_input(
+                "Buscar",
+                placeholder="Nombre o expediente...",
+                key="socio_busqueda_visitas",
+            )
+        with c2:
+            filtro_estado = st.selectbox(
+                "Estado de visita",
+                ["Todos", "Sin programar", "Programadas", "Visitadas", "Con informe", "Estados dispares"],
+                key="socio_estado_visitas",
+            )
+        with c3:
+            filtro_informes = st.selectbox(
+                "Informes",
+                ["Todos", "Social pendiente", "Tecnico pendiente", "Algun pendiente", "Completos", "Sin pendientes"],
+                key="socio_informes_visitas",
+            )
+        with c4:
+            st.button("Limpiar", use_container_width=True, key="socio_limpiar_filtros", on_click=limpiar_filtros_socio_visitas)
+
+    q = clean(busqueda).lower()
+    visitas = visitas_all
+    if q:
+        visitas = [
+            v
+            for v in visitas
+            if q in clean(v.get("d_apellido")).lower()
+            or q in clean(v.get("d_nombre")).lower()
+            or q in clean(v.get("d_expediente")).lower()
+            or q in clean(v.get("id_demanda")).lower()
+        ]
+
+    visitas = [v for v in visitas if visita_match_estado(v, filtro_estado)]
+    visitas = [v for v in visitas if visita_match_informes(v, filtro_informes)]
+    return visitas, q
+
+
 def render_card_socio(demanda, es_pendiente=False):
     n_id = demanda.get("id_demanda")
     titular = f"{clean(demanda.get('apellido'))}, {clean(demanda.get('nombre'))}"
@@ -116,16 +210,41 @@ def tab_seguimiento_visitas():
     k4.metric("Completados", c_comp)
 
     st.divider()
-    busqueda = st.text_input("Filtro por nombre / expediente", placeholder="Ej: Perez o 1234").strip().lower()
-    visitas = visitas_all
-    if busqueda:
-        visitas = [
-            v
-            for v in visitas_all
-            if busqueda in clean(v.get("d_apellido")).lower()
-            or busqueda in clean(v.get("d_nombre")).lower()
-            or busqueda in clean(v.get("d_expediente")).lower()
-        ]
+    st.markdown(
+        """
+        <style>
+        div[class*="st-key-socio_filtros_visitas"] [data-testid="stVerticalBlockBorderWrapper"] {
+            background: #ffffff !important;
+            border: 1px solid #d9e2ec !important;
+            border-radius: 14px !important;
+            padding: 8px 10px 10px !important;
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.035) !important;
+        }
+        div[class*="st-key-socio_filtros_visitas"] label {
+            font-size: 12px !important;
+            font-weight: 700 !important;
+            color: #475569 !important;
+        }
+        div[class*="st-key-socio_filtros_visitas"] input,
+        div[class*="st-key-socio_filtros_visitas"] [data-baseweb="select"] > div {
+            min-height: 36px !important;
+            background: #ffffff !important;
+            border-radius: 12px !important;
+            font-size: 13px !important;
+        }
+        div[class*="st-key-socio_limpiar_filtros"] button {
+            min-height: 36px !important;
+            height: 36px !important;
+            margin-top: 0 !important;
+            padding-top: 4px !important;
+            padding-bottom: 4px !important;
+            font-size: 13px !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    visitas, busqueda = render_filtros_visitas_socio(visitas_all)
 
     t_visitas, t_varios = st.tabs(["Seguimiento de visitas", "Seguimiento varios"])
 
