@@ -245,6 +245,11 @@ def ordenes_v2_css():
     st.markdown(
         """
         <style>
+        .block-container {
+            max-width: 1280px !important;
+            padding-left: 1.5rem !important;
+            padding-right: 1.5rem !important;
+        }
         .ord-v2-header-title {
             color: #0f2742;
             font-size: 25px;
