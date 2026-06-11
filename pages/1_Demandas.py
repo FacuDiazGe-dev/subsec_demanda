@@ -1193,23 +1193,23 @@ def render_demandas_kpis_v2(df):
     if sin_resp:
         st.markdown(f'<div class="dem-v2-kpi-chip">! {sin_resp} sin responsable</div>', unsafe_allow_html=True)
 
-def compactar_espaciado_operational_cards():
+def compactar_espaciado_operational_cards(scope_key="dem_v2_card_list"):
     st.markdown(
-        """
+        f"""
         <style>
-        div[data-testid="stVerticalBlock"]:has(iframe.stCustomComponentV1) {
+        div[class*="st-key-{scope_key}"] div[data-testid="stVerticalBlock"]:has(iframe.stCustomComponentV1) {{
             gap: 0.28rem !important;
-        }
-        div[data-testid="element-container"]:has(iframe.stCustomComponentV1),
-        div[data-testid="element-container"]:has(iframe[title*="operational_card"]) {
-            margin-bottom: -8px !important;
+        }}
+        div[class*="st-key-{scope_key}"] div[data-testid="element-container"]:has(iframe.stCustomComponentV1),
+        div[class*="st-key-{scope_key}"] div[data-testid="element-container"]:has(iframe[title*="operational_card"]) {{
+            margin-bottom: 6px !important;
             padding-bottom: 0 !important;
-        }
-        iframe.stCustomComponentV1,
-        iframe[title*="operational_card"] {
+        }}
+        div[class*="st-key-{scope_key}"] iframe.stCustomComponentV1,
+        div[class*="st-key-{scope_key}"] iframe[title*="operational_card"] {{
             display: block !important;
-            margin-bottom: -4px !important;
-        }
+            margin-bottom: 0 !important;
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -1365,8 +1365,8 @@ def pendientes_tab():
 
     # 3. Listado compacto de demandas
     st.markdown("### Listado de demandas")
-    compactar_espaciado_operational_cards()
-    with st.container(height=350):
+    compactar_espaciado_operational_cards("dem_v1_card_list")
+    with st.container(height=350, key="dem_v1_card_list"):
         for _, fila in df_filtrado.iterrows():
             demanda_card = fila.to_dict()
             did_card = demanda_card.get("id_demanda")
@@ -1889,7 +1889,7 @@ def demandas_v2():
     df_filtrado = render_filtros_demandas_v2(df)
 
     st.session_state.setdefault("demandas_v2_modo", "detalle" if st.session_state.get("demanda_seleccionada_id") else "empty")
-    compactar_espaciado_operational_cards()
+    compactar_espaciado_operational_cards("dem_v2_card_list")
 
     col_listado, col_detalle = st.columns([0.43, 0.57], gap="medium")
     with col_listado:
@@ -1910,7 +1910,7 @@ def demandas_v2():
         if df_filtrado.empty:
             st.info("No hay demandas que coincidan con los filtros.")
         else:
-            with st.container(height=690):
+            with st.container(height=690, key="dem_v2_card_list"):
                 for _, fila in df_filtrado.iterrows():
                     demanda_card = fila.to_dict()
                     did_card = demanda_card.get("id_demanda")
