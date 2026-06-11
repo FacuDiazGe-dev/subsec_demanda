@@ -106,6 +106,21 @@ def limpiar_filtros_socio_visitas():
         st.session_state.pop(key, None)
 
 
+def aplicar_ancho_sociohabitacional():
+    st.markdown(
+        """
+        <style>
+        [data-testid="stAppViewContainer"] main .block-container {
+            max-width: 1380px !important;
+            padding-left: 1.5rem !important;
+            padding-right: 1.5rem !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_filtros_visitas_socio(visitas_all):
     with st.container(border=True, key="socio_filtros_visitas"):
         c1, c2, c3, c4 = st.columns([2.1, 1.25, 1.35, 0.75])
@@ -481,6 +496,7 @@ def render_tablero_principal():
 
 def main():
     require_login(["admin", "tecnico"])
+    aplicar_ancho_sociohabitacional()
     st.title("SocioHabitacional")
     st.markdown("Tablero operativo de demandas sociohabitacionales y seguimiento de informes.")
     t1, t2 = st.tabs(["Tablero Operativo", "Seguimiento Socio Habitacional"])

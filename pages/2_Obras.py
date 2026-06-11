@@ -66,6 +66,21 @@ def show_error(error):
     st.error(f"No se pudo completar la operacion en Supabase: {error}")
 
 
+def aplicar_ancho_obras():
+    st.markdown(
+        """
+        <style>
+        [data-testid="stAppViewContainer"] main .block-container {
+            max-width: 1380px !important;
+            padding-left: 1.5rem !important;
+            padding-right: 1.5rem !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def prioridad_rank(p):
     p = clean(p).lower()
     if p.startswith("1"):
@@ -2001,6 +2016,7 @@ def seguimiento_tecnico_tab():
                         st.rerun()
 
 require_login(["admin", "tecnico"])
+aplicar_ancho_obras()
 st.title("Obras")
 t1, t2 = st.tabs(["Tablero / Edicion maestra", "Gestion de Obras"])
 with t1:

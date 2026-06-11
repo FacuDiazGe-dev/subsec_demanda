@@ -246,7 +246,7 @@ def ordenes_v2_css():
         """
         <style>
         .block-container {
-            max-width: 1280px !important;
+            max-width: 1380px !important;
             padding-left: 1.5rem !important;
             padding-right: 1.5rem !important;
         }
