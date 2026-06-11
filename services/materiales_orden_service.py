@@ -4,7 +4,7 @@ from services.supabase_client import get_supabase_client
 def listar_materiales_por_orden(id_orden):
     supabase = get_supabase_client()
     response = (
-        supabase.table("Mat_orden")
+        supabase.table("mat_orden")
         .select("*")
         .eq("id_orden", id_orden)
         .execute()
@@ -19,7 +19,7 @@ def crear_material_orden(id_orden, material, cantidad):
         "Material": (material or "").strip(),
         "cantidad": (cantidad or "").strip(),
     }
-    response = supabase.table("Mat_orden").insert(payload).execute()
+    response = supabase.table("mat_orden").insert(payload).execute()
     return response.data[0] if response.data else None
 
 
@@ -40,11 +40,11 @@ def crear_materiales_orden(id_orden, materiales):
         return []
 
     supabase = get_supabase_client()
-    response = supabase.table("Mat_orden").insert(payload).execute()
+    response = supabase.table("mat_orden").insert(payload).execute()
     return response.data or []
 
 
 def eliminar_materiales_por_orden(id_orden):
     supabase = get_supabase_client()
-    response = supabase.table("Mat_orden").delete().eq("id_orden", id_orden).execute()
+    response = supabase.table("mat_orden").delete().eq("id_orden", id_orden).execute()
     return response.data or []

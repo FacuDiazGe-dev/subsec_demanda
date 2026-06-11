@@ -149,6 +149,23 @@ def card_event_once(resultado, card_key, action=None):
     return True
 
 
+def editor_event_once(resultado, scope, action=None):
+    if not isinstance(resultado, dict):
+        return False
+    if action and resultado.get("action") != action:
+        return False
+    event_id = resultado.get("event_id")
+    if not event_id:
+        return False
+    key = f"_ordenes_editor_eventos_vistos_{scope}"
+    vistos = st.session_state.setdefault(key, [])
+    if event_id in vistos:
+        return False
+    vistos.append(event_id)
+    st.session_state[key] = vistos[-40:]
+    return True
+
+
 def filas_materiales_read(materiales):
     return [
         {
@@ -572,7 +589,7 @@ def ordenes_v2_tab():
                 embedded=True,
                 key=f"ord_v2_edit_materiales_{n_sel}",
             )
-            if isinstance(resultado_mats, dict) and resultado_mats.get("action") == "save":
+            if editor_event_once(resultado_mats, f"materiales_{n_sel}", "save"):
                 filas_editor = resultado_mats.get("rows") or []
                 nuevos = []
                 for row in filas_editor:
