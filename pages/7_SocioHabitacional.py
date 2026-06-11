@@ -3,6 +3,7 @@ from datetime import date
 import streamlit as st
 
 from utils.auth import require_login
+from utils.operational_card_component import operational_card
 from utils.operational_kpi_component import operational_kpis
 from utils.visit_followup_card_component import visit_followup_card
 from services.sociohabitacional_service import (
@@ -26,6 +27,11 @@ def txt(v):
 
 def clean(v):
     return txt(v).strip()
+
+
+def sin_dato(v):
+    valor = clean(v)
+    return valor if valor and valor.lower() not in {"nan", "none", "null", "-"} else "Sin dato"
 
 
 def fecha_corta(v):
@@ -121,6 +127,25 @@ def aplicar_ancho_sociohabitacional():
     )
 
 
+def socio_card_event_once(resultado, card_key, action=None):
+    if not isinstance(resultado, dict):
+        return False
+    if resultado.get("card_key") != card_key:
+        return False
+    if action and resultado.get("action") != action:
+        return False
+    event_id = resultado.get("event_id")
+    if not event_id:
+        return False
+    key = "_socio_card_eventos_vistos"
+    vistos = st.session_state.setdefault(key, [])
+    if event_id in vistos:
+        return False
+    vistos.append(event_id)
+    st.session_state[key] = vistos[-80:]
+    return True
+
+
 def render_filtros_visitas_socio(visitas_all):
     with st.container(border=True, key="socio_filtros_visitas"):
         c1, c2, c3, c4 = st.columns([2.1, 1.25, 1.35, 0.75])
@@ -200,51 +225,92 @@ def render_kpis_sociohabitacional(c_para, c_prog, c_inf, c_comp):
 
 def render_card_socio(demanda, es_pendiente=False):
     n_id = demanda.get("id_demanda")
-    titular = f"{clean(demanda.get('apellido'))}, {clean(demanda.get('nombre'))}"
-    expte = clean(demanda.get("expediente")) or "Sin Expte."
+    apellido = clean(demanda.get("apellido")).upper()
+    nombre = clean(demanda.get("nombre"))
+    titular = ", ".join([x for x in [apellido, nombre] if x]) or "Sin titular"
+    expte = clean(demanda.get("expediente")) or "Sin expediente"
+    accion = clean(demanda.get("accion")) or "Sin accion"
+    estado = clean(demanda.get("estado")) or "Sin estado"
+    prioridad = clean(demanda.get("prioridad")) or None
+    domicilio = sin_dato(demanda.get("domicilio"))
+    barrio = sin_dato(demanda.get("barrio"))
+    contacto = clean(demanda.get("contacto"))
+    obs = clean(demanda.get("observaciones"))
+    resumen = obs.split("||")[0] if "||" in obs else obs
+    card_key = f"socio_demanda_{n_id}"
 
-    with st.container(border=True):
-        st.markdown(f"**{titular} - Expte. {expte}**")
-        st.caption(
-            f"Ingreso: {fecha_corta(demanda.get('fecha_ingreso'))} | "
-            f"Tipo: {clean(demanda.get('accion'))} | Prioridad: {clean(demanda.get('prioridad'))}"
-        )
-        obs = clean(demanda.get("observaciones"))
-        resumen = obs.split("||")[0] if "||" in obs else obs
-        st.write(resumen[:150] + ("..." if len(resumen) > 150 else ""))
+    accion_norm = accion.lower()
+    if "visitar" in accion_norm:
+        variant = "highlight"
+        accent = "#1d4ed8"
+    elif "informe" in accion_norm or "nota" in accion_norm:
+        variant = "success"
+        accent = "#0f766e"
+    elif "actuacion" in accion_norm or "seguimiento" in accion_norm:
+        variant = "warning"
+        accent = "#f59e0b"
+    else:
+        variant = "default"
+        accent = "#64748b"
 
-        if es_pendiente:
-            clave_chk = f"val_chk_{n_id}"
-            validar = st.checkbox("Validar demanda", key=clave_chk)
+    acciones = None
+    if es_pendiente:
+        acciones = [{"label": "Validar", "key": "validar", "kind": "primary"}]
 
-            if validar:
-                st.divider()
-                st.markdown("##### Validacion de demanda")
-                estado_sug, accion_sug = estado_sugerido_por_tipo(demanda.get("accion"))
-                with st.form(key=f"form_val_{n_id}"):
-                    st.info(f"Estado sugerido: **{estado_sug}**")
-                    obs_accion = st.text_input("Observacion / accion a realizar", value=accion_sug)
-                    c1, c2 = st.columns(2)
-                    btn_confirmar = c1.form_submit_button("Validar demanda", type="primary", use_container_width=True)
-                    btn_cancelar = c2.form_submit_button("Cancelar", use_container_width=True)
+    resultado = operational_card(
+        title=titular,
+        subtitle=f"Expte. {expte}",
+        status=estado,
+        priority=prioridad,
+        meta=[
+            f"Accion: {accion}",
+            f"Ingreso: {fecha_corta(demanda.get('fecha_ingreso'))}",
+            f"{domicilio} - {barrio}",
+        ] + ([f"Contacto: {contacto}"] if contacto else []),
+        description=resumen[:170] + ("..." if len(resumen) > 170 else ""),
+        footer=f"Demanda #{n_id}",
+        variant=variant,
+        accent_color=accent,
+        actions=acciones,
+        actions_layout="corner",
+        card_key=card_key,
+        key=card_key,
+    )
 
-                if btn_confirmar:
-                    try:
-                        res = validar_demanda_sociohabitacional(demanda, estado_sug, clean(obs_accion))
-                        if res.get("visita"):
-                            v_res = res["visita"]
-                            if v_res.get("status") == "success":
-                                st.success(f"Validada: {v_res.get('message')}")
-                            elif v_res.get("status") == "warning":
-                                st.warning(f"Validada: {v_res.get('message')}")
-                        else:
-                            st.success(f"Demanda #{n_id} validada correctamente.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error al validar: {e}")
+    if es_pendiente and socio_card_event_once(resultado, card_key, "validar"):
+        st.session_state["socio_validando_demanda"] = n_id
+        st.rerun()
 
-                if btn_cancelar:
+    if es_pendiente and st.session_state.get("socio_validando_demanda") == n_id:
+        with st.container(border=True, key=f"socio_validacion_{n_id}"):
+            st.markdown("##### Validacion de demanda")
+            estado_sug, accion_sug = estado_sugerido_por_tipo(demanda.get("accion"))
+            with st.form(key=f"form_val_{n_id}"):
+                st.info(f"Estado sugerido: **{estado_sug}**")
+                obs_accion = st.text_input("Observacion / accion a realizar", value=accion_sug)
+                c1, c2 = st.columns(2)
+                btn_confirmar = c1.form_submit_button("Validar demanda", type="primary", use_container_width=True)
+                btn_cancelar = c2.form_submit_button("Cancelar", use_container_width=True)
+
+            if btn_confirmar:
+                try:
+                    res = validar_demanda_sociohabitacional(demanda, estado_sug, clean(obs_accion))
+                    if res.get("visita"):
+                        v_res = res["visita"]
+                        if v_res.get("status") == "success":
+                            st.success(f"Validada: {v_res.get('message')}")
+                        elif v_res.get("status") == "warning":
+                            st.warning(f"Validada: {v_res.get('message')}")
+                    else:
+                        st.success(f"Demanda #{n_id} validada correctamente.")
+                    st.session_state.pop("socio_validando_demanda", None)
                     st.rerun()
+                except Exception as e:
+                    st.error(f"Error al validar: {e}")
+
+            if btn_cancelar:
+                st.session_state.pop("socio_validando_demanda", None)
+                st.rerun()
 
 
 def tab_seguimiento_visitas():
