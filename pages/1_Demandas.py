@@ -963,21 +963,27 @@ def calcular_kpis_obras(df):
     ]
 
     pendientes_ids = set()
-    estados_excluidos = {"en ejecucion", "ejecutada", "finalizada", "cerrada", "cerrado", "cancelada"}
-    if not df.empty and "accion" in df.columns:
-        acciones_obra = df["accion"].fillna("").map(normalizar_texto).isin({"obra", "emergencia"})
-        if "estado" in df.columns:
-            demandas_pendientes = df[acciones_obra & ~df["estado"].fillna("").map(normalizar_texto).isin(estados_excluidos)]
-        else:
-            demandas_pendientes = df[acciones_obra]
-        for _, demanda in demandas_pendientes.iterrows():
-            pendientes_ids.add(f"d:{demanda.get('id_demanda', len(pendientes_ids))}")
+    ids_demandas_con_obra = {o.get("id_demanda") for o in obras if o.get("id_demanda") is not None}
+    estados_excluidos_obra = {"en ejecucion", "ejecutada", "finalizada", "cerrada", "cerrado", "cancelada"}
 
     for obra in obras:
         estado_obra = normalizar_texto(obra.get("estado_obra"))
-        if estado_obra and estado_obra not in estados_excluidos:
+        if estado_obra and estado_obra not in estados_excluidos_obra:
             id_demanda = obra.get("id_demanda")
             pendientes_ids.add(f"d:{id_demanda}" if id_demanda is not None else f"o:{obra.get('id_obra')}")
+
+    if not df.empty and "accion" in df.columns:
+        acciones_obra = df["accion"].fillna("").map(normalizar_texto).isin({"obra", "emergencia"})
+        demandas_sin_obra = df[acciones_obra & ~df["id_demanda"].isin(ids_demandas_con_obra)] if "id_demanda" in df.columns else df[acciones_obra]
+        if "estado" in df.columns:
+            estados_excluidos_demanda = {"ejecutada", "finalizada", "cerrada", "cerrado", "cancelada", "cancelado"}
+            demandas_pendientes = demandas_sin_obra[
+                ~demandas_sin_obra["estado"].fillna("").map(normalizar_texto).isin(estados_excluidos_demanda)
+            ]
+        else:
+            demandas_pendientes = demandas_sin_obra
+        for _, demanda in demandas_pendientes.iterrows():
+            pendientes_ids.add(f"d:{demanda.get('id_demanda', len(pendientes_ids))}")
 
     return {"activas": len(activas), "pendientes": len(pendientes_ids), "ha": len(ha), "mo": len(mo)}
 
