@@ -1129,11 +1129,19 @@ def obras_v2_tab():
                     f"""
                     <div class="obras-v2-title">{obra_linea_1(obra).replace(" - ", " - ", 1)}</div>
                     <div class="obras-v2-subtitle">{obra_linea_2(obra).replace(" - ", " - ", 1)}</div>
-                    <div class="obras-v2-block-title">Datos generales</div>
                     """,
                     unsafe_allow_html=True,
                 )
                 with st.form(f"obras_v2_form_{obra.get('id_obra')}", border=False):
+                    st.markdown('<div class="obras-v2-block-title">Descripcion de obra</div>', unsafe_allow_html=True)
+                    st.text_area(
+                        "Descripcion de obra",
+                        value=txt(obra.get("descripcion_obra")),
+                        height=58,
+                        key=f"obras_v2_desc_{obra.get('id_obra')}",
+                        label_visibility="collapsed",
+                    )
+                    st.markdown('<div class="obras-v2-block-title">Datos generales</div>', unsafe_allow_html=True)
                     c1, c2 = st.columns(2)
                     with c1:
                         st.selectbox(
@@ -1157,9 +1165,14 @@ def obras_v2_tab():
                             index=TIPOS_OBRA_PROGRAMA.index(obra.get("tipo_obra_programa")) if obra.get("tipo_obra_programa") in TIPOS_OBRA_PROGRAMA else 0,
                             key=f"obras_v2_tipo_edit_{obra.get('id_obra')}",
                         )
-                    with st.expander("Descripcion y observaciones", expanded=False):
-                        st.text_area("Descripcion de obra", value=txt(obra.get("descripcion_obra")), height=48, key=f"obras_v2_desc_{obra.get('id_obra')}")
-                        st.text_area("Observaciones", value=txt(obra.get("obs_obras")), height=48, key=f"obras_v2_obs_{obra.get('id_obra')}")
+                    st.markdown('<div class="obras-v2-block-title">Observaciones / historial</div>', unsafe_allow_html=True)
+                    st.text_area(
+                        "Observaciones / historial",
+                        value=txt(obra.get("obs_obras")),
+                        height=72,
+                        key=f"obras_v2_obs_{obra.get('id_obra')}",
+                        label_visibility="collapsed",
+                    )
                     _, bcol = st.columns([1, 0.26])
                     with bcol:
                         guardar_datos = st.form_submit_button("Guardar", type="primary", use_container_width=True)
