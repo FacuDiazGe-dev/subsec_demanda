@@ -942,10 +942,10 @@ def obras_v2_tab():
             box-shadow: 0 1px 7px rgba(15, 23, 42, 0.045) !important;
         }
         div[class*="st-key-obras_v2_ficha"] [data-testid="stVerticalBlock"] {
-            gap: 0.22rem !important;
+            gap: 0.42rem !important;
         }
         div[class*="st-key-obras_v2_ficha"] [data-testid="column"] [data-testid="stVerticalBlock"] {
-            gap: 0.16rem !important;
+            gap: 0.28rem !important;
         }
         div[class*="st-key-obras_v2_ficha"] label {
             font-size: 12px !important;
@@ -981,6 +981,12 @@ def obras_v2_tab():
             min-height: 58px !important;
             height: 58px !important;
         }
+        div[class*="st-key-obras_v2_desc_"] {
+            margin-top: 8px !important;
+        }
+        div[class*="st-key-obras_v2_obs_"] {
+            margin-top: 8px !important;
+        }
         div[class*="st-key-obras_v2_obs_"] textarea {
             min-height: 112px !important;
             height: 112px !important;
@@ -1011,8 +1017,9 @@ def obras_v2_tab():
             font-size: 13px;
             font-weight: 850;
             margin-top: 10px;
-            padding-top: 9px;
-            margin-bottom: 5px;
+            padding-top: 11px;
+            margin-bottom: 9px;
+            line-height: 1.25;
         }
         .obras-v2-block-title:first-child {
             margin-top: 7px;
