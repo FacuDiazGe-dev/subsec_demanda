@@ -969,13 +969,23 @@ def obras_v2_tab():
         }
         div[class*="st-key-obras_v2_ficha"] textarea {
             background: #ffffff !important;
-            min-height: 48px !important;
-            height: 48px !important;
-            max-height: 54px !important;
+            min-height: 54px !important;
+            height: 54px !important;
+            max-height: 150px !important;
             padding-top: 5px !important;
             padding-bottom: 5px !important;
             font-size: 13px !important;
             line-height: 1.25 !important;
+        }
+        div[class*="st-key-obras_v2_desc_"] textarea {
+            min-height: 58px !important;
+            height: 58px !important;
+        }
+        div[class*="st-key-obras_v2_obs_"] textarea {
+            min-height: 112px !important;
+            height: 112px !important;
+            max-height: 180px !important;
+            line-height: 1.32 !important;
         }
         div[class*="st-key-obras_v2_ficha"] [data-testid="stExpander"] {
             background: #ffffff !important;
@@ -1000,8 +1010,12 @@ def obras_v2_tab():
             color: #1e293b;
             font-size: 13px;
             font-weight: 850;
-            margin-top: 6px;
-            padding-top: 6px;
+            margin-top: 10px;
+            padding-top: 9px;
+            margin-bottom: 5px;
+        }
+        .obras-v2-block-title:first-child {
+            margin-top: 7px;
         }
         .obras-v2-section-title {
             color: #0f2742;
@@ -1141,7 +1155,7 @@ def obras_v2_tab():
                         key=f"obras_v2_desc_{obra.get('id_obra')}",
                         label_visibility="collapsed",
                     )
-                    st.markdown('<div class="obras-v2-block-title">Datos generales</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="obras-v2-block-title obras-v2-block-title-general">Datos generales</div>', unsafe_allow_html=True)
                     c1, c2 = st.columns(2)
                     with c1:
                         st.selectbox(
@@ -1165,7 +1179,7 @@ def obras_v2_tab():
                             index=TIPOS_OBRA_PROGRAMA.index(obra.get("tipo_obra_programa")) if obra.get("tipo_obra_programa") in TIPOS_OBRA_PROGRAMA else 0,
                             key=f"obras_v2_tipo_edit_{obra.get('id_obra')}",
                         )
-                    st.markdown('<div class="obras-v2-block-title">Observaciones / historial</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="obras-v2-block-title obras-v2-block-title-history">Observaciones / historial</div>', unsafe_allow_html=True)
                     st.text_area(
                         "Observaciones / historial",
                         value=txt(obra.get("obs_obras")),
