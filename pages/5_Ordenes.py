@@ -530,8 +530,8 @@ def ordenes_v2_tab():
             ck = f"orden_v2_{sufijo}{n_orden}"
             selected = st.session_state.get("orden_v2_sel") == n_orden
             accion = operational_card(
-                title=f"Orden N° {texto(n_orden)} · Expte. {sin_dato(orden.get('expediente'))}",
-                subtitle=f"{nombre_persona_orden(orden)} · {sin_dato(orden.get('domicilio'))} - {sin_dato(orden.get('barrio'))}",
+                title=f"{nombre_persona_orden(orden)} · Expte. {sin_dato(orden.get('expediente'))}",
+                subtitle=f"Orden N° {texto(n_orden)} · {sin_dato(orden.get('domicilio'))} - {sin_dato(orden.get('barrio'))}",
                 status=sin_dato(orden.get("estado")),
                 priority=limpiar(orden.get("prioridad_demanda")) or None,
                 meta=[
