@@ -48,3 +48,11 @@ def eliminar_materiales_por_orden(id_orden):
     supabase = get_supabase_client()
     response = supabase.table("mat_orden").delete().eq("id_orden", id_orden).execute()
     return response.data or []
+
+
+def reemplazar_materiales_orden(id_orden, materiales):
+    """Reemplaza el listado completo de materiales de una orden."""
+    eliminar_materiales_por_orden(id_orden)
+    if not materiales:
+        return []
+    return crear_materiales_orden(id_orden, materiales)

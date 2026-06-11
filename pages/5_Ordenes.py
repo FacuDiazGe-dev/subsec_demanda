@@ -5,9 +5,9 @@ import streamlit as st
 from utils.auth import require_login
 from services.materiales_base_service import listar_materiales_base_activos
 from services.materiales_orden_service import (
-    crear_materiales_orden,
     eliminar_materiales_por_orden,
     listar_materiales_por_orden,
+    reemplazar_materiales_orden,
 )
 from services.ordenes_service import (
     actualizar_orden_detalle,
@@ -651,15 +651,14 @@ def ordenes_v2_tab():
                 nuevos, duplicados = consolidar_materiales_orden(nuevos)
                 try:
                     actualizar_orden_detalle(n_sel, nuevo_estado, instrucciones_edit)
-                    eliminar_materiales_por_orden(n_sel)
-                    if nuevos:
-                        crear_materiales_orden(n_sel, nuevos)
+                    reemplazar_materiales_orden(n_sel, nuevos)
                 except Exception as error:
                     mostrar_error_supabase(error)
                 else:
                     if duplicados:
                         st.warning(f"Se unificaron materiales repetidos: {', '.join(duplicados)}.")
                     st.success("Orden actualizada.")
+                    st.session_state.pop(f"ord_v2_edit_materiales_{n_sel}", None)
                     st.rerun()
 
             try:
