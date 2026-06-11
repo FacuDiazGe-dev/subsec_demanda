@@ -179,6 +179,55 @@ def filas_materiales_read(materiales):
     ]
 
 
+def numero_material(valor):
+    valor = limpiar(valor).replace(",", ".")
+    if not valor:
+        return None
+    try:
+        numero = float(valor)
+    except ValueError:
+        return None
+    return int(numero) if numero.is_integer() else numero
+
+
+def consolidar_materiales_orden(materiales):
+    consolidados = {}
+    orden = []
+    duplicados = set()
+    for material in materiales:
+        nombre = limpiar(material.get("Material"))
+        if not nombre:
+            continue
+        clave = nombre.casefold()
+        cantidad_raw = limpiar(material.get("cantidad"))
+        cantidad_num = numero_material(cantidad_raw)
+        if clave not in consolidados:
+            consolidados[clave] = {
+                "Material": nombre,
+                "cantidad": cantidad_num if cantidad_num is not None else cantidad_raw,
+                "_numerica": cantidad_num is not None,
+            }
+            orden.append(clave)
+            continue
+
+        duplicados.add(nombre)
+        actual = consolidados[clave]
+        if actual["_numerica"] and cantidad_num is not None:
+            actual["cantidad"] = actual["cantidad"] + cantidad_num
+        elif cantidad_raw and cantidad_raw not in str(actual["cantidad"]):
+            actual["cantidad"] = f"{actual['cantidad']} + {cantidad_raw}"
+            actual["_numerica"] = False
+
+    resultado = []
+    for clave in orden:
+        item = consolidados[clave]
+        cantidad = item["cantidad"]
+        if isinstance(cantidad, float) and cantidad.is_integer():
+            cantidad = int(cantidad)
+        resultado.append({"Material": item["Material"], "cantidad": str(cantidad)})
+    return resultado, sorted(duplicados)
+
+
 def catalogo_materiales_operativo():
     opciones, mapa = opciones_materiales_base()
     catalogo = []
@@ -599,6 +648,7 @@ def ordenes_v2_tab():
                     cantidad = limpiar(row.get("quantity") or row.get("cantidad"))
                     if material:
                         nuevos.append({"Material": material, "cantidad": cantidad})
+                nuevos, duplicados = consolidar_materiales_orden(nuevos)
                 try:
                     actualizar_orden_detalle(n_sel, nuevo_estado, instrucciones_edit)
                     eliminar_materiales_por_orden(n_sel)
@@ -607,6 +657,8 @@ def ordenes_v2_tab():
                 except Exception as error:
                     mostrar_error_supabase(error)
                 else:
+                    if duplicados:
+                        st.warning(f"Se unificaron materiales repetidos: {', '.join(duplicados)}.")
                     st.success("Orden actualizada.")
                     st.rerun()
 

@@ -367,6 +367,7 @@
       let isDirty = false;
       let initialized = false;
       let lastRowsSignature = "";
+      let saveInProgress = false;
 
       const esc = (v) =>
         String(v ?? "")
@@ -405,6 +406,8 @@
       }
 
       function setValue(action) {
+        if (action === "save" && saveInProgress) return;
+        if (action === "save") saveInProgress = true;
         send(MSG.SET_COMPONENT_VALUE, { value: value(action), dataType: "json" });
       }
 
@@ -614,6 +617,9 @@
 
         const saveBtn = document.getElementById("saveBtn");
         if (saveBtn) saveBtn.addEventListener("click", () => {
+          if (saveInProgress) return;
+          saveBtn.disabled = true;
+          saveBtn.textContent = "Actualizando...";
           lastRowsSignature = rowSignature(rows);
           setValue("save");
         });
@@ -691,6 +697,7 @@
           if (!initialized || !isDirty || incomingSignature === localSignature) {
             rows = incomingRows;
             lastRowsSignature = incomingSignature;
+            saveInProgress = false;
             initialized = true;
             if (incomingSignature === localSignature) {
               isDirty = false;
