@@ -4,6 +4,8 @@ from services.supabase_client import get_supabase_client
 
 ACCIONES_SOCIO = ["Visitar", "Hacer nota", "Informe", "Actuacion", "Otro", "Seguimiento"]
 ESTADOS_REGISTRADOS = ["Para visita", "Programada", "Visitada", "Informe", "Para Hacer", "En elaboración", "Presentado"]
+ESTADOS_PENDIENTES_TABLERO = {"ingresada", "pendiente"}
+ESTADOS_CERRADOS_EXCLUIDOS = {"cerrado", "cerrada", "cancelado", "cancelada", "finalizado", "finalizada"}
 
 ESTADO_PARA_VISITA = "Para visita"
 ESTADO_PROGRAMADA = "Programada"
@@ -41,6 +43,7 @@ def listar_demandas_sociohabitacionales():
     data = response.data or []
     acciones_ok = {"visitar", "hacer nota", "informe", "actuacion", "otro", "seguimiento"}
     data = [d for d in data if _normalizar(d.get("accion")) in acciones_ok]
+    data = [d for d in data if _normalizar(d.get("estado")) not in ESTADOS_CERRADOS_EXCLUIDOS]
     
     # Aplanamos los datos de la visita si existen para facilitar el acceso en la UI
     for d in data:
@@ -54,10 +57,15 @@ def listar_demandas_sociohabitacionales():
 def filtrar_socio_habitacional(demandas, bloque="registradas"):
     """Separa las demandas según si ya fueron validadas o están en estado inicial."""
     if bloque == "registradas":
-        filtradas = [d for d in demandas if _limpiar(d.get("estado")) in ESTADOS_REGISTRADOS]
+        filtradas = [
+            d
+            for d in demandas
+            if _normalizar(d.get("estado")) not in ESTADOS_PENDIENTES_TABLERO
+            and _normalizar(d.get("estado")) not in ESTADOS_CERRADOS_EXCLUIDOS
+        ]
     else:
         # Pendientes: estado Ingresada o Pendiente
-        filtradas = [d for d in demandas if _limpiar(d.get("estado")) in ["Ingresada", "Pendiente"]]
+        filtradas = [d for d in demandas if _normalizar(d.get("estado")) in ESTADOS_PENDIENTES_TABLERO]
     
     # Ordenar por prioridad y luego por ID
     return sorted(filtradas, key=lambda x: (_prioridad_rank(x.get("prioridad")), x.get("id_demanda") or 0))
