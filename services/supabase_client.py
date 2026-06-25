@@ -1,7 +1,9 @@
 import os
 
+import httpx
 import streamlit as st
 from supabase import create_client
+from supabase.lib.client_options import ClientOptions
 
 
 @st.cache_resource
@@ -20,4 +22,6 @@ def get_supabase_client():
         st.error("Faltan SUPABASE_URL y SUPABASE_KEY en secrets.toml o variables de entorno.")
         st.stop()
 
-    return create_client(url, key)
+    httpx_client = httpx.Client(trust_env=False)
+    options = ClientOptions(httpx_client=httpx_client)
+    return create_client(url, key, options=options)

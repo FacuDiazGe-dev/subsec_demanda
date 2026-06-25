@@ -1749,6 +1749,7 @@ def detalle_demanda_panel_v2(demanda):
                         st.warning("No se encontró ese expediente en la base general.")
                 except Exception as error:
                     mostrar_error_supabase(error)
+
     with c3:
         with st.expander("Finalizar expediente", expanded=False):
             st.write("Marcar como resuelta y archivar.")
@@ -1762,6 +1763,7 @@ def detalle_demanda_panel_v2(demanda):
                     st.rerun()
                 except Exception as error:
                     mostrar_error_supabase(error)
+
 
 
 def editar_demanda_panel_v2(demanda):

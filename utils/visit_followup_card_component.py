@@ -58,7 +58,7 @@ def visit_followup_card(
         selectable=bool(selectable),
         selected=bool(selected),
         card_key=card_key or "",
-        component_version="2026-06-10-visit-card-bulk-program",
+        component_version="2026-06-25-visit-card-typography-softened",
         key=component_key,
         default=None,
     )

@@ -258,32 +258,81 @@ def render_card_socio(demanda, es_pendiente=False):
         acciones = [{"label": "Validar", "key": "validar", "kind": "primary"}]
 
     resultado = operational_card(
-        title=titular,
-        subtitle=f"Expte. {expte}",
+        title=f"{titular} - Expte. {expte}",
+        subtitle=domicilio,
         status=estado,
         priority=prioridad,
-        meta=[
-            f"Accion: {accion}",
-            f"Ingreso: {fecha_corta(demanda.get('fecha_ingreso'))}",
-            f"{domicilio} - {barrio}",
-        ] + ([f"Contacto: {contacto}"] if contacto else []),
-        description=resumen[:170] + ("..." if len(resumen) > 170 else ""),
-        footer=f"Demanda #{n_id}",
+        meta=[f"Contacto: {contacto}"] if contacto else [],
+        description=resumen[:110] + ("..." if len(resumen) > 110 else ""),
+        footer=accion,
         variant=variant,
         accent_color=accent,
         actions=acciones,
         actions_layout="corner",
         card_key=card_key,
         key=card_key,
+        clickable=True,
+        selected=st.session_state.get("socio_tablero_sel") == n_id,
     )
 
-    if es_pendiente and socio_card_event_once(resultado, card_key, "validar"):
-        st.session_state["socio_validando_demanda"] = n_id
+    if socio_card_event_once(resultado, card_key, "card_click"):
+        st.session_state["socio_tablero_sel"] = n_id
         st.rerun()
 
-    if es_pendiente and st.session_state.get("socio_validando_demanda") == n_id:
-        with st.container(border=True, key=f"socio_validacion_{n_id}"):
-            st.markdown("##### Validacion de demanda")
+    if es_pendiente and socio_card_event_once(resultado, card_key, "validar"):
+        st.session_state["socio_tablero_sel"] = n_id
+        st.rerun()
+
+
+def render_detalle_socio(demanda, es_pendiente=False):
+    n_id = demanda.get("id_demanda")
+    apellido = clean(demanda.get("apellido")).upper()
+    nombre = clean(demanda.get("nombre"))
+    titular = ", ".join([x for x in [apellido, nombre] if x]) or "Sin titular"
+    expte = clean(demanda.get("expediente")) or "Sin expediente"
+    accion = clean(demanda.get("accion")) or "Sin accion"
+    estado = clean(demanda.get("estado")) or "Sin estado"
+    prioridad = clean(demanda.get("prioridad")) or None
+    observaciones = clean(demanda.get("observaciones")) or "Sin observaciones"
+
+    st.markdown("#### Demanda seleccionada")
+    with st.container(border=True, key=f"socio_detail_panel_{n_id}"):
+        operational_card(
+            title=titular,
+            subtitle=f"Expte. {expte}",
+            status=estado,
+            priority=prioridad,
+            meta=[
+                f"Accion: {accion}",
+                f"Ingreso: {fecha_corta(demanda.get('fecha_ingreso'))}",
+            ],
+            description=None,
+            footer=f"Demanda #{n_id}",
+            variant="default",
+            accent_color="#1d4ed8" if "visitar" in accion.lower() else "#0f766e",
+            selected=True,
+            card_key=f"socio_detail_{n_id}",
+            key=f"socio_detail_{n_id}",
+        )
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown(f"**Domicilio**  \n{sin_dato(demanda.get('domicilio'))}")
+            st.markdown(f"**Barrio**  \n{sin_dato(demanda.get('barrio'))}")
+            st.markdown(f"**DNI**  \n{sin_dato(demanda.get('dni'))}")
+        with c2:
+            st.markdown(f"**Contacto**  \n{sin_dato(demanda.get('contacto'))}")
+            st.markdown(f"**Origen**  \n{sin_dato(demanda.get('origen'))}")
+            st.markdown(f"**Responsable**  \n{sin_dato(demanda.get('responsable'))}")
+
+        st.markdown("**Historial / observaciones**")
+        st.markdown(
+            f'<div class="socio-detail-obs">{observaciones}</div>',
+            unsafe_allow_html=True,
+        )
+
+        if es_pendiente:
+            st.markdown("#### Validacion de demanda")
             estado_sug, accion_sug = estado_sugerido_por_tipo(demanda.get("accion"))
             with st.form(key=f"form_val_{n_id}"):
                 st.info(f"Estado sugerido: **{estado_sug}**")
@@ -303,13 +352,11 @@ def render_card_socio(demanda, es_pendiente=False):
                             st.warning(f"Validada: {v_res.get('message')}")
                     else:
                         st.success(f"Demanda #{n_id} validada correctamente.")
-                    st.session_state.pop("socio_validando_demanda", None)
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error al validar: {e}")
 
             if btn_cancelar:
-                st.session_state.pop("socio_validando_demanda", None)
                 st.rerun()
 
 
@@ -363,7 +410,7 @@ def tab_seguimiento_visitas():
     t_visitas, t_varios = st.tabs(["Seguimiento de visitas", "Seguimiento varios"])
 
     with t_visitas:
-        col_izq, col_der = st.columns([0.75, 0.25])
+        col_izq, col_der = st.columns([0.6, 0.4])
         with col_izq:
             st.markdown("#### Seguimiento general")
             visitas_seleccionadas_key = "socio_visitas_programar_ids"
@@ -540,24 +587,78 @@ def render_tablero_principal():
         st.error(f"Error al conectar con la base de datos: {e}")
         return
 
-    st.subheader("Demandas registradas")
-    registradas = filtrar_socio_habitacional(todas, bloque="registradas")
-    if not registradas:
-        st.info("No hay demandas registradas en proceso.")
-    else:
-        cols = st.columns(2)
-        for i, d in enumerate(registradas):
-            with cols[i % 2]:
-                render_card_socio(d, es_pendiente=False)
+    st.markdown(
+        """
+        <style>
+        .socio-detail-obs {
+            background: #f8fafc;
+            border: 1px solid #dbe7ee;
+            border-radius: 12px;
+            padding: 10px 12px;
+            color: #334155;
+            font-size: 13px;
+            line-height: 1.42;
+            max-height: 220px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        div[class*="st-key-socio_activas_scroll_wrap"] [data-testid="stVerticalBlock"],
+        div[class*="st-key-socio_pendientes_scroll_wrap"] [data-testid="stVerticalBlock"] {
+            padding: 4px 8px 4px 4px !important;
+        }
+        div[class*="st-key-socio_activas_scroll_wrap"] [data-testid="stVerticalBlock"] > div,
+        div[class*="st-key-socio_pendientes_scroll_wrap"] [data-testid="stVerticalBlock"] > div {
+            gap: 0.55rem !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    st.divider()
-    st.subheader("Demandas pendientes")
+    registradas = filtrar_socio_habitacional(todas, bloque="registradas")
     pendientes = filtrar_socio_habitacional(todas, bloque="pendientes")
-    if not pendientes:
-        st.success("Buen trabajo. No hay demandas pendientes de validacion.")
-    else:
-        for d in pendientes:
-            render_card_socio(d, es_pendiente=True)
+    todas_tablero = registradas + pendientes
+
+    if todas_tablero and st.session_state.get("socio_tablero_sel") not in {d.get("id_demanda") for d in todas_tablero}:
+        st.session_state["socio_tablero_sel"] = todas_tablero[0].get("id_demanda")
+
+    col_lista, col_detalle = st.columns([0.6, 0.4], gap="medium")
+
+    with col_lista:
+        st.subheader("Demandas registradas")
+        if not registradas:
+            st.info("No hay demandas registradas en proceso.")
+        else:
+            st.caption(f"{len(registradas)} demandas activas")
+            with st.container(border=True, height=620, key="socio_activas_scroll_wrap"):
+                for d in registradas:
+                    render_card_socio(d, es_pendiente=False)
+
+        st.divider()
+        st.subheader("Demandas pendientes")
+        if not pendientes:
+            st.success("Buen trabajo. No hay demandas pendientes de validacion.")
+        else:
+            st.caption(f"{len(pendientes)} demandas para validar")
+            with st.container(border=True, height=420, key="socio_pendientes_scroll_wrap"):
+                for d in pendientes:
+                    render_card_socio(d, es_pendiente=True)
+
+    with col_detalle:
+        if not todas_tablero:
+            st.info("No hay demandas para mostrar.")
+            return
+
+        seleccionada = next(
+            (d for d in todas_tablero if d.get("id_demanda") == st.session_state.get("socio_tablero_sel")),
+            None,
+        )
+        if not seleccionada:
+            seleccionada = todas_tablero[0]
+            st.session_state["socio_tablero_sel"] = seleccionada.get("id_demanda")
+
+        es_pendiente = any(d.get("id_demanda") == seleccionada.get("id_demanda") for d in pendientes)
+        render_detalle_socio(seleccionada, es_pendiente=es_pendiente)
 
 
 def main():

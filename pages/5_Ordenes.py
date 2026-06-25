@@ -3,14 +3,17 @@ from html import escape
 import streamlit as st
 
 from utils.auth import require_login
+from services.demandas_service import listar_demandas_pendientes
 from services.materiales_base_service import listar_materiales_base_activos
 from services.materiales_orden_service import (
+    crear_materiales_orden,
     eliminar_materiales_por_orden,
     listar_materiales_por_orden,
     reemplazar_materiales_orden,
 )
 from services.ordenes_service import (
     actualizar_orden_detalle,
+    crear_orden_material,
     eliminar_orden_material,
     listar_ordenes_con_demanda,
     obtener_datos_pdf_orden,
@@ -179,6 +182,18 @@ def filas_materiales_read(materiales):
     ]
 
 
+def materiales_desde_editor(rows):
+    materiales = []
+    for row in rows or []:
+        if row.get("deleted"):
+            continue
+        material = limpiar(row.get("item_label") or row.get("item_id") or row.get("Material"))
+        cantidad = limpiar(row.get("quantity") or row.get("cantidad"))
+        if material:
+            materiales.append({"Material": material, "cantidad": cantidad})
+    return materiales
+
+
 def numero_material(valor):
     valor = limpiar(valor).replace(",", ".")
     if not valor:
@@ -228,6 +243,14 @@ def consolidar_materiales_orden(materiales):
     return resultado, sorted(duplicados)
 
 
+def nombre_demanda(demanda):
+    apellido = limpiar(demanda.get("apellido")).upper()
+    nombre = limpiar(demanda.get("nombre"))
+    if apellido and nombre:
+        return f"{apellido}, {nombre}"
+    return apellido or nombre or "Sin titular"
+
+
 def catalogo_materiales_operativo():
     opciones, mapa = opciones_materiales_base()
     catalogo = []
@@ -239,6 +262,20 @@ def catalogo_materiales_operativo():
         unidad = partes[-1] if len(partes) >= 2 else ""
         catalogo.append({"id": material, "label": material, "unit": unidad})
     return catalogo
+
+
+def demandas_para_crear_orden():
+    try:
+        demandas = listar_demandas_pendientes()
+    except Exception:
+        return []
+
+    resultado = []
+    for demanda in demandas:
+        if limpiar(demanda.get("accion")) != "Entregar materiales":
+            continue
+        resultado.append(demanda)
+    return resultado
 
 
 def ordenes_v2_css():
@@ -499,10 +536,132 @@ def aplicar_filtros_ordenes_v2(ordenes):
     return filtradas
 
 
+def crear_orden_panel():
+    st.markdown('<div class="ord-v2-section-title">Nueva orden</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="ord-v2-section-caption">Genera una orden desde una demanda de entrega de materiales.</div>',
+        unsafe_allow_html=True,
+    )
+
+    demandas = demandas_para_crear_orden()
+    if not demandas:
+        st.markdown(
+            '<div class="ord-v2-empty">No hay demandas activas de tipo Entregar materiales para generar ordenes.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    opciones = {
+        f"Demanda #{texto(d.get('id_demanda'))} | {nombre_demanda(d)} | Expte. {sin_dato(d.get('expediente'))}": d
+        for d in demandas
+    }
+    etiquetas = list(opciones.keys())
+    seleccion_actual = st.session_state.get("ord_v2_crear_demanda_label")
+    if seleccion_actual not in opciones:
+        seleccion_actual = etiquetas[0]
+        st.session_state["ord_v2_crear_demanda_label"] = seleccion_actual
+
+    seleccion = st.selectbox(
+        "Demanda origen",
+        etiquetas,
+        index=etiquetas.index(seleccion_actual),
+        key="ord_v2_crear_demanda_label",
+    )
+    demanda = opciones.get(seleccion)
+    if not demanda:
+        st.markdown('<div class="ord-v2-empty">Selecciona una demanda para continuar.</div>', unsafe_allow_html=True)
+        return
+
+    operational_card(
+        title=f"{nombre_demanda(demanda)} · Expte. {sin_dato(demanda.get('expediente'))}",
+        subtitle=f"Demanda #{texto(demanda.get('id_demanda'))} · {sin_dato(demanda.get('domicilio'))} - {sin_dato(demanda.get('barrio'))}",
+        status=sin_dato(demanda.get("estado")),
+        priority=limpiar(demanda.get("prioridad")) or None,
+        meta=[
+            f"Accion: {sin_dato(demanda.get('accion'))}",
+            f"Origen: {sin_dato(demanda.get('origen'))}",
+            f"Contacto: {sin_dato(demanda.get('contacto'))}",
+        ],
+        description=limpiar(demanda.get("observaciones")),
+        footer=f"DNI: {sin_dato(demanda.get('dni'))}",
+        variant="highlight",
+        accent_color="#0284c7",
+        selected=True,
+        card_key=f"ord_v2_demanda_{texto(demanda.get('id_demanda'))}",
+        key=f"ord_v2_demanda_card_{texto(demanda.get('id_demanda'))}",
+    )
+
+    estado_orden = st.selectbox(
+        "Tipo de orden",
+        ["Pedido entrega", "Pedido retiro"],
+        key=f"ord_v2_crear_tipo_{texto(demanda.get('id_demanda'))}",
+    )
+    instrucciones = st.text_area(
+        "Instruccion",
+        value=limpiar(demanda.get("observaciones")) or f"Orden creada desde Demanda #{texto(demanda.get('id_demanda'))}.",
+        height=92,
+        key=f"ord_v2_crear_instr_{texto(demanda.get('id_demanda'))}",
+    )
+    resultado_mats = operational_list_editor(
+        title="Materiales de la orden",
+        rows=st.session_state.setdefault("ord_v2_crear_materiales", []),
+        catalog=catalogo_materiales_operativo(),
+        help_text="Seleccione materiales del catalogo y cargue la cantidad solicitada.",
+        add_label="Agregar material",
+        save_label="Generar orden",
+        item_label="Material",
+        mode="build",
+        show_unit=True,
+        allow_delete=True,
+        embedded=True,
+        key="ord_v2_crear_materiales_editor",
+    )
+
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        if st.button("Cancelar", use_container_width=True, key="ord_v2_cancelar_crear"):
+            st.session_state["ord_v2_modo"] = "detalle"
+            st.rerun()
+    with c2:
+        st.empty()
+
+    if editor_event_once(resultado_mats, "crear_orden", "save"):
+        filas_editor = resultado_mats.get("rows") or []
+        st.session_state["ord_v2_crear_materiales"] = filas_editor
+        materiales, duplicados = consolidar_materiales_orden(materiales_desde_editor(filas_editor))
+        if not materiales:
+            st.warning("Agrega al menos un material para generar la orden.")
+            return
+
+        try:
+            nueva = crear_orden_material(
+                {
+                    "id_demanda": demanda.get("id_demanda"),
+                    "origen": limpiar(demanda.get("origen")) or "Demandas",
+                    "estado": estado_orden,
+                    "instrucciones_tarea": limpiar(instrucciones) or f"Orden creada desde Demanda #{texto(demanda.get('id_demanda'))}.",
+                }
+            )
+            if nueva:
+                crear_materiales_orden(nueva.get("n_orden"), materiales)
+        except Exception as error:
+            mostrar_error_supabase(error)
+        else:
+            if duplicados:
+                st.warning(f"Se unificaron materiales repetidos: {', '.join(duplicados)}.")
+            st.success("Orden generada.")
+            st.session_state["orden_v2_sel"] = nueva.get("n_orden") if nueva else None
+            st.session_state["ord_v2_modo"] = "detalle"
+            st.session_state["ord_v2_crear_materiales"] = []
+            st.rerun()
+
+
 def ordenes_v2_tab():
     ordenes_v2_css()
     st.markdown('<div class="ord-v2-header-title">Ordenes</div>', unsafe_allow_html=True)
     st.markdown('<div class="ord-v2-header-subtitle">Consulta, seguimiento y gestion de ordenes de materiales.</div>', unsafe_allow_html=True)
+    st.session_state.setdefault("ord_v2_modo", "detalle")
+    st.session_state.setdefault("ord_v2_crear_materiales", [])
 
     try:
         ordenes = listar_ordenes_con_demanda(incluir_cerradas=True)
@@ -518,8 +677,15 @@ def ordenes_v2_tab():
 
     col_list, col_detail = st.columns([0.45, 0.55])
     with col_list:
-        st.markdown('<div class="ord-v2-section-title">Listado de ordenes</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="ord-v2-section-caption">{len(filtradas)} ordenes segun filtros aplicados.</div>', unsafe_allow_html=True)
+        h1, h2 = st.columns([1, 0.42], vertical_alignment="center")
+        with h1:
+            st.markdown('<div class="ord-v2-section-title">Listado de ordenes</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="ord-v2-section-caption">{len(filtradas)} ordenes segun filtros aplicados.</div>', unsafe_allow_html=True)
+        with h2:
+            if st.button("+ Crear orden", type="primary", use_container_width=False, key="ord_v2_btn_crear"):
+                st.session_state["ord_v2_modo"] = "crear"
+                st.session_state["ord_v2_crear_materiales"] = []
+                st.rerun()
         if not filtradas:
             st.markdown('<div class="ord-v2-empty">Sin resultados con esos filtros.</div>', unsafe_allow_html=True)
         ordenes_activas = [o for o in filtradas if limpiar(o.get("estado")) not in {"Entregado", "Cancelado", "Cerrado"}]
@@ -549,6 +715,7 @@ def ordenes_v2_tab():
             )
             if card_event_once(accion, ck, "card_click"):
                 st.session_state["orden_v2_sel"] = n_orden
+                st.session_state["ord_v2_modo"] = "detalle"
                 st.rerun()
 
         for orden in ordenes_activas:
@@ -560,6 +727,10 @@ def ordenes_v2_tab():
                     render_card_orden_lista(orden, sufijo="arch_")
 
     with col_detail:
+        if st.session_state.get("ord_v2_modo") == "crear":
+            crear_orden_panel()
+            return
+
         st.markdown('<div class="ord-v2-section-title">Orden seleccionada</div>', unsafe_allow_html=True)
         n_sel = st.session_state.get("orden_v2_sel")
         orden = next((o for o in ordenes if o.get("n_orden") == n_sel), None) if n_sel else None
