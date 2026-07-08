@@ -125,6 +125,15 @@ def agregar_actualizacion_demanda_social(id_demanda, texto_actualizacion):
     }
     return supabase.table("demandas").update(payload).eq("id_demanda", id_demanda).execute()
 
+
+def editar_historial_demanda_social(id_demanda, nuevo_historial):
+    supabase = get_supabase_client()
+    payload = {
+        "observaciones": _limpiar(nuevo_historial),
+        "updated_at": datetime.now().isoformat(),
+    }
+    return supabase.table("demandas").update(payload).eq("id_demanda", id_demanda).execute()
+
 def existe_visita_para_demanda(id_demanda):
     """Verifica si ya existe una visita vinculada a la demanda."""
     supabase = get_supabase_client()

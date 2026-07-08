@@ -10,6 +10,7 @@ from services.sociohabitacional_service import (
     agregar_actualizacion_demanda_social,
     actualizar_estado_demanda_social,
     contar_indicadores_visitas,
+    editar_historial_demanda_social,
     estado_sugerido_por_tipo,
     filtrar_socio_habitacional,
     listar_demandas_sociohabitacionales,
@@ -308,6 +309,8 @@ def render_detalle_socio(demanda, es_pendiente=False):
     estado = clean(demanda.get("estado")) or "Sin estado"
     prioridad = clean(demanda.get("prioridad")) or None
     observaciones = clean(demanda.get("observaciones")) or "Sin observaciones"
+    editar_hist_key = f"socio_editar_historial_{n_id}"
+    st.session_state.setdefault(editar_hist_key, False)
 
     st.markdown("#### Demanda seleccionada")
     with st.container(border=True, key=f"socio_detail_panel_{n_id}"):
@@ -344,6 +347,47 @@ def render_detalle_socio(demanda, es_pendiente=False):
             f'<div class="socio-detail-obs">{observaciones}</div>',
             unsafe_allow_html=True,
         )
+
+        c_hist_btn1, c_hist_btn2 = st.columns([0.35, 0.65])
+        with c_hist_btn1:
+            if st.button(
+                "Editar historial",
+                key=f"btn_edit_hist_{n_id}",
+                use_container_width=True,
+            ):
+                st.session_state[editar_hist_key] = True
+                st.rerun()
+
+        if st.session_state.get(editar_hist_key):
+            with st.form(key=f"form_edit_hist_{n_id}"):
+                historial_editado = st.text_area(
+                    "Editar historial / observaciones",
+                    value=observaciones if observaciones != "Sin observaciones" else "",
+                    height=180,
+                )
+                c_guardar_hist, c_cancel_hist = st.columns(2)
+                guardar_historial = c_guardar_hist.form_submit_button(
+                    "Guardar historial",
+                    type="primary",
+                    use_container_width=True,
+                )
+                cancelar_historial = c_cancel_hist.form_submit_button(
+                    "Cancelar",
+                    use_container_width=True,
+                )
+
+            if guardar_historial:
+                try:
+                    editar_historial_demanda_social(n_id, historial_editado)
+                    st.session_state[editar_hist_key] = False
+                    st.success("Historial actualizado.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error al editar el historial: {e}")
+
+            if cancelar_historial:
+                st.session_state[editar_hist_key] = False
+                st.rerun()
 
         st.markdown("**Nueva actualizacion**")
         with st.form(key=f"form_act_socio_{n_id}"):
