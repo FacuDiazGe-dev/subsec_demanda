@@ -13,7 +13,7 @@ from services.deposito_service import (
     marcar_no_realizado,
     programar_ordenes_deposito,
 )
-from services.materiales_orden_service import listar_materiales_por_orden
+from services.materiales_orden_service import listar_materiales_por_ordenes
 from utils.auth import require_login
 from utils.operational_card_component import operational_card
 from utils.operational_list_editor_component import operational_list_editor
@@ -414,6 +414,33 @@ def resumen_texto(valor, max_len=110):
     return f"{valor[:max_len].rstrip()}..."
 
 
+@st.cache_data(ttl=180)
+def cache_materiales_por_ordenes(ids_ordenes):
+    return listar_materiales_por_ordenes(list(ids_ordenes))
+
+
+def enriquecer_ordenes_con_materiales_cache(ordenes):
+    if not ordenes:
+        return []
+
+    ids = []
+    for orden in ordenes:
+        try:
+            ids.append(int(orden.get("n_orden")))
+        except (TypeError, ValueError):
+            continue
+
+    mapa = cache_materiales_por_ordenes(tuple(sorted(set(ids))))
+    enriquecidas = []
+    for orden in ordenes:
+        try:
+            n_orden = int(orden.get("n_orden"))
+        except (TypeError, ValueError):
+            n_orden = orden.get("n_orden")
+        enriquecidas.append({**orden, "materiales": mapa.get(n_orden, orden.get("materiales") or [])})
+    return enriquecidas
+
+
 def badge_estado(estado):
     estado = limpiar(estado)
     return f"{ESTILOS_ESTADO.get(estado, 'Estado')} - {estado}"
@@ -532,11 +559,7 @@ def mostrar_detalle_orden(orden):
             """,
             unsafe_allow_html=True,
         )
-        try:
-            materiales = listar_materiales_por_orden(orden.get("n_orden"))
-        except Exception as error:
-            st.error(f"No se pudieron cargar materiales: {error}")
-            materiales = []
+        materiales = orden.get("materiales") or []
 
         if materiales:
             operational_list_editor(
@@ -641,11 +664,7 @@ def card_resumen_estado(orden):
             unsafe_allow_html=True,
         )
 
-        try:
-            materiales = listar_materiales_por_orden(n_orden)
-        except Exception as error:
-            st.caption(f"No se pudieron cargar materiales: {error}")
-            materiales = []
+        materiales = orden.get("materiales") or []
 
         if materiales:
             operational_list_editor(
@@ -757,6 +776,7 @@ def preparar_pedidos_programables():
     ordenes = listar_pedidos_deposito()
     kpis_pedidos_deposito(ordenes)
     ordenes_filtradas = aplicar_filtros_pedidos(ordenes) if ordenes else []
+    ordenes_filtradas = enriquecer_ordenes_con_materiales_cache(ordenes_filtradas)
 
     agrupadas = {}
     for orden in ordenes_filtradas:
@@ -825,6 +845,7 @@ def consultas_rapidas_deposito():
 
     with st.expander("Entregadas o canceladas", expanded=False):
         cerradas = listar_ordenes_por_estados({"Entregado", "Cancelado", "Cerrado"})
+        cerradas = enriquecer_ordenes_con_materiales_cache(cerradas)
         if not cerradas:
             st.info("No hay ordenes entregadas o canceladas.")
         else:

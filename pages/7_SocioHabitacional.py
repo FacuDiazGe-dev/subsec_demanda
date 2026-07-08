@@ -7,6 +7,7 @@ from utils.operational_card_component import operational_card
 from utils.operational_kpi_component import operational_kpis
 from utils.visit_followup_card_component import visit_followup_card
 from services.sociohabitacional_service import (
+    agregar_actualizacion_demanda_social,
     actualizar_estado_demanda_social,
     contar_indicadores_visitas,
     estado_sugerido_por_tipo,
@@ -107,6 +108,18 @@ def visita_match_informes(v, filtro_informes):
     return True
 
 
+def ordenar_visitas_seguimiento(visitas):
+    return sorted(
+        visitas,
+        key=lambda v: (
+            clean(v.get("d_apellido")).lower(),
+            clean(v.get("d_nombre")).lower(),
+            clean(v.get("d_expediente")).lower(),
+            v.get("id_visit") or 0,
+        ),
+    )
+
+
 def limpiar_filtros_socio_visitas():
     for key in ["socio_busqueda_visitas", "socio_estado_visitas", "socio_informes_visitas"]:
         st.session_state.pop(key, None)
@@ -184,6 +197,7 @@ def render_filtros_visitas_socio(visitas_all):
 
     visitas = [v for v in visitas if visita_match_estado(v, filtro_estado)]
     visitas = [v for v in visitas if visita_match_informes(v, filtro_informes)]
+    visitas = ordenar_visitas_seguimiento(visitas)
     return visitas, q
 
 
@@ -330,6 +344,31 @@ def render_detalle_socio(demanda, es_pendiente=False):
             f'<div class="socio-detail-obs">{observaciones}</div>',
             unsafe_allow_html=True,
         )
+
+        st.markdown("**Nueva actualizacion**")
+        with st.form(key=f"form_act_socio_{n_id}"):
+            nueva_actualizacion = st.text_area(
+                "Agregar actualizacion al historial",
+                placeholder="Escribi una actualizacion breve...",
+                height=90,
+                label_visibility="collapsed",
+            )
+            guardar_actualizacion = st.form_submit_button(
+                "Guardar actualizacion",
+                type="primary",
+                use_container_width=True,
+            )
+
+        if guardar_actualizacion:
+            if not clean(nueva_actualizacion):
+                st.warning("Escribe una actualizacion antes de guardar.")
+            else:
+                try:
+                    agregar_actualizacion_demanda_social(n_id, clean(nueva_actualizacion))
+                    st.success("Actualizacion guardada.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error al guardar la actualizacion: {e}")
 
         if es_pendiente:
             st.markdown("#### Validacion de demanda")

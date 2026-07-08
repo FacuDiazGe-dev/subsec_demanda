@@ -106,6 +106,25 @@ def actualizar_estado_demanda_social(id_demanda, nuevo_estado):
         payload["fecha_cierre"] = date.today().isoformat()
     return supabase.table("demandas").update(payload).eq("id_demanda", id_demanda).execute()
 
+
+def agregar_actualizacion_demanda_social(id_demanda, texto_actualizacion):
+    supabase = get_supabase_client()
+    actualizacion = _limpiar(texto_actualizacion)
+    if not actualizacion:
+        raise ValueError("La actualizacion no puede estar vacia.")
+
+    actual_res = supabase.table("demandas").select("observaciones").eq("id_demanda", id_demanda).single().execute()
+    obs_previa = _limpiar(actual_res.data.get("observaciones")) if actual_res.data else ""
+    hoy = date.today().strftime("%d/%m/%y")
+    entrada_historial = f"|| {hoy} - Actualizacion: {actualizacion}"
+    nuevas_obs = f"{entrada_historial} {obs_previa}".strip()
+
+    payload = {
+        "observaciones": nuevas_obs,
+        "updated_at": datetime.now().isoformat(),
+    }
+    return supabase.table("demandas").update(payload).eq("id_demanda", id_demanda).execute()
+
 def existe_visita_para_demanda(id_demanda):
     """Verifica si ya existe una visita vinculada a la demanda."""
     supabase = get_supabase_client()

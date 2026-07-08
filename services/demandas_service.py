@@ -36,6 +36,19 @@ def listar_demandas_abiertas():
     return response.data or []
 
 
+def listar_demandas_finalizadas():
+    supabase = get_supabase_client()
+    response = (
+        supabase.table("demandas")
+        .select("*")
+        .not_.is_("fecha_cierre", "null")
+        .order("fecha_cierre", desc=True)
+        .order("prioridad", desc=False)
+        .execute()
+    )
+    return response.data or []
+
+
 def actualizar_demanda(id_demanda, datos):
     supabase = get_supabase_client()
     response = (

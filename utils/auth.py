@@ -1,11 +1,21 @@
-import streamlit as st
+from datetime import timedelta
 import unicodedata
+
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+import streamlit as st
+
+try:
+    from streamlit_cookies_controller import CookieController
+except Exception:  # pragma: no cover
+    CookieController = None
 
 from services.usuarios_app_service import obtener_usuario_login, verificar_password
 
 
 ROLES_TODO = {"admin", "tecnico"}
 EQUIPOS_TODO = {"administracion", "general"}
+AUTH_COOKIE_NAME = "subsec_auth"
+AUTH_COOKIE_MAX_AGE = int(timedelta(days=14).total_seconds())
 
 
 def _norm(valor):
@@ -14,7 +24,97 @@ def _norm(valor):
     return "".join(ch for ch in valor if not unicodedata.combining(ch))
 
 
+def _cookie_controller():
+    if CookieController is None:
+        return None
+    controller = st.session_state.get("_auth_cookie_controller")
+    if controller is None:
+        controller = CookieController(key="auth_cookie_controller")
+        st.session_state["_auth_cookie_controller"] = controller
+    return controller
+
+
+def _auth_secret():
+    secret = None
+    try:
+        secret = st.secrets.get("auth_cookie_secret")
+    except Exception:
+        secret = None
+    return secret or "subsec-vivienda-habitat-cookie-v1"
+
+
+def _auth_serializer():
+    return URLSafeTimedSerializer(_auth_secret(), salt="auth-cookie")
+
+
+def _build_user_session(data):
+    return {
+        "id_usuario": data.get("id_usuario"),
+        "usuario": data.get("usuario"),
+        "equipo": data.get("equipo"),
+        "rol": data.get("rol") or "operador",
+    }
+
+
+def _save_auth_cookie(user):
+    controller = _cookie_controller()
+    if controller is None or not user:
+        return
+    payload = {
+        "id_usuario": user.get("id_usuario"),
+        "usuario": user.get("usuario"),
+    }
+    token = _auth_serializer().dumps(payload)
+    controller.set(
+        AUTH_COOKIE_NAME,
+        token,
+        max_age=AUTH_COOKIE_MAX_AGE,
+        same_site="lax",
+    )
+
+
+def _clear_auth_cookie():
+    controller = _cookie_controller()
+    if controller is None:
+        return
+    try:
+        controller.remove(AUTH_COOKIE_NAME, same_site="lax")
+    except Exception:
+        pass
+
+
+def _restore_session_from_cookie():
+    if st.session_state.get("usuario_app"):
+        return
+    controller = _cookie_controller()
+    if controller is None:
+        return
+    token = controller.get(AUTH_COOKIE_NAME)
+    if not token:
+        return
+    try:
+        payload = _auth_serializer().loads(token, max_age=AUTH_COOKIE_MAX_AGE)
+    except (BadSignature, SignatureExpired):
+        _clear_auth_cookie()
+        return
+
+    usuario = payload.get("usuario")
+    user_id = payload.get("id_usuario")
+    if not usuario:
+        _clear_auth_cookie()
+        return
+
+    data = obtener_usuario_login(usuario)
+    if not data or str(data.get("id_usuario")) != str(user_id):
+        _clear_auth_cookie()
+        return
+
+    st.session_state["usuario_app"] = _build_user_session(data)
+    st.session_state.pop("auth_error", None)
+
+
 def usuario_actual():
+    _restore_session_from_cookie()
     return st.session_state.get("usuario_app")
 
 
@@ -25,6 +125,7 @@ def esta_logueado():
 def cerrar_sesion():
     for key in ["usuario_app", "auth_error"]:
         st.session_state.pop(key, None)
+    _clear_auth_cookie()
 
 
 def iniciar_sesion(usuario, password):
@@ -33,12 +134,8 @@ def iniciar_sesion(usuario, password):
         st.session_state["auth_error"] = "Usuario o contraseña incorrectos."
         return False
 
-    st.session_state["usuario_app"] = {
-        "id_usuario": data.get("id_usuario"),
-        "usuario": data.get("usuario"),
-        "equipo": data.get("equipo"),
-        "rol": data.get("rol") or "operador",
-    }
+    st.session_state["usuario_app"] = _build_user_session(data)
+    _save_auth_cookie(st.session_state["usuario_app"])
     st.session_state.pop("auth_error", None)
     return True
 

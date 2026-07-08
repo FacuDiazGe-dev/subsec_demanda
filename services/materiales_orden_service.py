@@ -20,6 +20,32 @@ def listar_materiales_por_orden(id_orden):
     return response.data or []
 
 
+def listar_materiales_por_ordenes(ids_ordenes):
+    ids = []
+    for id_orden in ids_ordenes or []:
+        normalizado = _normalizar_id_orden(id_orden)
+        if normalizado is None or normalizado in ids:
+            continue
+        ids.append(normalizado)
+
+    if not ids:
+        return {}
+
+    supabase = get_supabase_client()
+    response = (
+        supabase.table("mat_orden")
+        .select("*")
+        .in_("id_orden", ids)
+        .execute()
+    )
+
+    agrupados = {id_orden: [] for id_orden in ids}
+    for fila in response.data or []:
+        id_orden = _normalizar_id_orden(fila.get("id_orden"))
+        agrupados.setdefault(id_orden, []).append(fila)
+    return agrupados
+
+
 def crear_material_orden(id_orden, material, cantidad):
     id_orden = _normalizar_id_orden(id_orden)
     supabase = get_supabase_client()

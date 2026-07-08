@@ -138,6 +138,13 @@ def resumen(valor, largo=180):
     return f"{valor[:largo].rstrip()}..."
 
 
+def descripcion_inicial_obra(demanda):
+    descripcion = clean(demanda.get("pedido")) or clean(demanda.get("observaciones"))
+    if descripcion:
+        return descripcion
+    return f"Obra generada desde validacion de demanda #{demanda.get('id_demanda')}."
+
+
 def variant_obra(estado):
     estado_norm = normalizar(estado)
     if estado_norm == "en ejecucion":
@@ -524,7 +531,7 @@ def tablero_tab():
                 with c2:
                     estado = st.selectbox("estado_obra", ESTADOS_OBRA, index=0)
                     responsable = st.selectbox("responsable_tecnico", RESPONSABLES_TECNICOS, index=0)
-                descripcion = st.text_area("descripcion_obra", value=f"Obra generada desde tablero por validacion de demanda #{d.get('id_demanda')}.", height=80)
+                descripcion = st.text_area("descripcion_obra", value=descripcion_inicial_obra(d), height=80)
                 c_crear, c_cancelar = st.columns([2, 1])
                 with c_crear:
                     crear = st.form_submit_button("Validar y crear obra", type="primary", use_container_width=True)
@@ -782,7 +789,7 @@ def tablero_tab():
                     modalidad = st.selectbox("modalidad_ejecucion", MODALIDADES_EJECUCION, index=MODALIDADES_EJECUCION.index("Cuadrilla HAVITA") if "Cuadrilla HAVITA" in MODALIDADES_EJECUCION else 0)
                     estado = st.selectbox("estado_obra", ESTADOS_OBRA, index=0)
                     responsable = st.selectbox("responsable_tecnico", RESPONSABLES_TECNICOS, index=0)
-                    descripcion = st.text_area("descripcion_obra", value=f"Obra generada desde tablero por validacion de demanda #{d.get('id_demanda')}.", height=80)
+                    descripcion = st.text_area("descripcion_obra", value=descripcion_inicial_obra(d), height=80)
                     c_crear, c_cancelar = st.columns([2, 1])
                     crear = c_crear.form_submit_button("Validar y crear", type="primary", use_container_width=True)
                     cancelar = c_cancelar.form_submit_button("Cancelar", use_container_width=True)
@@ -936,7 +943,7 @@ def crear_obra_desde_demanda_v2(demanda, ids_con_obra):
         "modalidad_ejecucion": "Cuadrilla HAVITA",
         "estado_obra": "Para firmar acta",
         "responsable_tecnico": RESPONSABLES_TECNICOS[0] if RESPONSABLES_TECNICOS else None,
-        "descripcion_obra": f"Obra generada desde Obras v2 por validacion de demanda #{id_demanda}.",
+        "descripcion_obra": descripcion_inicial_obra(demanda),
         "obs_obras": f"|| {date.today().strftime('%d/%m/%y')} - Obra creada desde Obras v2 por validacion de demanda.",
         "fecha_creacion": date.today().isoformat(),
     }

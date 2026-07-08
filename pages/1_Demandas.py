@@ -20,6 +20,7 @@ from services.demandas_service import (
     actualizar_demanda,
     cerrar_demanda,
     crear_demanda,
+    listar_demandas_finalizadas,
     listar_demandas_pendientes,
 )
 from services.sociohabitacional_service import listar_visitas_detalladas
@@ -1884,7 +1885,8 @@ def demandas_v2():
         """,
         unsafe_allow_html=True,
     )
-    demandas = listar_demandas_pendientes()
+    ver_finalizadas = st.toggle("Ver finalizadas", key="dem_v2_ver_finalizadas")
+    demandas = listar_demandas_finalizadas() if ver_finalizadas else listar_demandas_pendientes()
     df = pd.DataFrame(demandas)
     render_demandas_kpis_v2(df)
     st.markdown('<div style="height: 14px;"></div>', unsafe_allow_html=True)
@@ -1893,14 +1895,28 @@ def demandas_v2():
     st.session_state.setdefault("demandas_v2_modo", "detalle" if st.session_state.get("demanda_seleccionada_id") else "empty")
     compactar_espaciado_operational_cards("dem_v2_card_list")
 
+    ids_disponibles = set()
+    if not df.empty and "id_demanda" in df.columns:
+        ids_disponibles = set(df["id_demanda"].astype(str))
+    if st.session_state.get("demanda_seleccionada_id") is not None and str(st.session_state.get("demanda_seleccionada_id")) not in ids_disponibles:
+        st.session_state.pop("demanda_seleccionada_id", None)
+        if st.session_state.get("demandas_v2_modo") != "crear":
+            set_modo_demandas_v2("empty")
+
+    caption_listado = (
+        "Demandas finalizadas segun filtros aplicados."
+        if ver_finalizadas
+        else "Demandas activas segun filtros aplicados."
+    )
+
     col_listado, col_detalle = st.columns([0.43, 0.57], gap="medium")
     with col_listado:
         h1, h2 = st.columns([1, 0.42], vertical_alignment="center")
         with h1:
             st.markdown(
-                """
+                f"""
                 <div class="dem-v2-section-title">Listado de demandas</div>
-                <div class="dem-v2-section-caption">Demandas activas segun filtros aplicados.</div>
+                <div class="dem-v2-section-caption">{caption_listado}</div>
                 """,
                 unsafe_allow_html=True,
             )

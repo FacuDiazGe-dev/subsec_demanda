@@ -270,9 +270,10 @@ def demandas_para_crear_orden():
     except Exception:
         return []
 
+    acciones_validas = {"entregar materiales", "obra", "emergencia"}
     resultado = []
     for demanda in demandas:
-        if limpiar(demanda.get("accion")) != "Entregar materiales":
+        if normalizar_texto(demanda.get("accion")) not in acciones_validas:
             continue
         resultado.append(demanda)
     return resultado
@@ -546,7 +547,7 @@ def crear_orden_panel():
     demandas = demandas_para_crear_orden()
     if not demandas:
         st.markdown(
-            '<div class="ord-v2-empty">No hay demandas activas de tipo Entregar materiales para generar ordenes.</div>',
+            '<div class="ord-v2-empty">No hay demandas activas de tipo Entregar materiales, Obra o Emergencia para generar ordenes.</div>',
             unsafe_allow_html=True,
         )
         return
